@@ -219,10 +219,9 @@ pub fn simple_effect(effect_index: u8, l: &Lighting) -> ProtoResult<Packet> {
     let mut p = packet(&[0x14, 0x2C]);
     let rand = rand_color(effect_index, l.color_type);
     p[2] = effect_index;
-    // `14 2C 00 01` is the per-key colour chunk header (§5.5): with applyAll = 1 the
-    // firmware parses Static as chunk number `speed`, NAKs `FF` and overwrites per-key
-    // colours otherwise. Static is sent with applyAll = 0 (hardware, fw 0x57).
-    p[3] = if effect_index == effect::STATIC { 0 } else { 1 };
+    // applyAll is 0 (hardware, fw 0x57): with 1, Static (`14 2C 00 01`) is parsed as a
+    // per-key colour chunk and the other effects are ignored or switch to Custom.
+    p[3] = 0;
     p[4] = if effect_index == effect::STATIC { 0xFF } else { map_speed(effect_index, l.speed) };
     p[5] = l.brightness.min(100);
     p[6] = rand;
@@ -267,7 +266,8 @@ impl BlockData {
         stops[1] = [0xFF, c2[0], c2[1], c2[2]];
         BlockData {
             effect_index,
-            apply_all: 1,
+            // 0 like the simple effects: with 1 the keyboard ignores the block (fw 0x57).
+            apply_all: 0,
             speed: l.speed,
             brightness: l.brightness.min(100),
             rand_color: match l.color_type {
@@ -899,17 +899,18 @@ mod tests {
         l.speed = 50;
         l.color1 = Rgb(0x00, 0xa0, 0xff);
         l.brightness = 100;
-        assert_pkt(&lighting_packet(&l).unwrap(), "14 2c 01 01 03 64 00 ff ff 00 a0 ff");
+        assert_pkt(&lighting_packet(&l).unwrap(), "14 2c 01 00 03 64 00 ff ff 00 a0 ff");
     }
 
     #[test]
-    fn effects_never_use_the_per_key_header() {
+    fn effects_are_sent_with_apply_all_0() {
         for m in MenuIndex::ALL.into_iter().filter(|&m| m != MenuIndex::Custom) {
             for ct in [ColorType::Single, ColorType::Dual, ColorType::Random] {
                 let mut l = Lighting::new(m);
                 l.color_type = ct;
                 let p = lighting_packet(&l).unwrap();
-                assert_ne!(&p[..4], &[0x14, 0x2C, 0x00, 0x01], "{m:?} {ct:?}");
+                assert_eq!(p[3], 0, "{m:?} {ct:?}");
+                assert_ne!(&p[..4], &[0x14, 0x2C, 0x00, 0x01], "{m:?} {ct:?}: per-key header");
             }
         }
     }
@@ -1040,7 +1041,7 @@ mod tests {
         l.speed = 100;
         l.direction = 2;
         let p = lighting_packet(&l).unwrap();
-        assert_eq!(&p[2..10], &[4, 1, 6, 100, 0, 2, 2, 4]);
+        assert_eq!(&p[2..10], &[4, 0, 6, 100, 0, 2, 2, 4]);
         assert_eq!(&p[10..26], &[25, 1, 2, 3, 50, 4, 5, 6, 75, 1, 2, 3, 100, 4, 5, 6]);
         l.direction = 3;
         assert!(lighting_packet(&l).is_err());
@@ -1049,7 +1050,7 @@ mod tests {
         t.color1 = Rgb(9, 9, 9);
         t.speed = 0;
         let p = lighting_packet(&t).unwrap();
-        assert_eq!(&p[2..14], &[7, 1, 10, 100, 0, 9, 0, 1, 100, 9, 9, 9]);
+        assert_eq!(&p[2..14], &[7, 0, 10, 100, 0, 9, 0, 1, 100, 9, 9, 9]);
         assert_eq!(p[14], 0xFF, "stop1 unused");
 
         t.color_type = ColorType::Random;
