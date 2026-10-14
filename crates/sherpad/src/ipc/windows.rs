@@ -52,8 +52,14 @@ fn same_user(pipe: &NamedPipeServer) -> bool {
     }
 }
 
-pub async fn serve(daemon: Arc<Daemon>, name: &str) -> io::Result<()> {
-    let mut server = ServerOptions::new().first_pipe_instance(true).reject_remote_clients(true).create(name).map_err(|e| {
+pub struct Bound {
+    first: NamedPipeServer,
+    name: String,
+}
+
+/// Create the first pipe instance; fails with `AlreadyExists` if another daemon owns it.
+pub fn bind(name: &str) -> io::Result<Bound> {
+    let first = ServerOptions::new().first_pipe_instance(true).reject_remote_clients(true).create(name).map_err(|e| {
         if e.kind() == io::ErrorKind::PermissionDenied {
             io::Error::new(io::ErrorKind::AlreadyExists, format!("another daemon owns {name}"))
         } else {
@@ -61,6 +67,12 @@ pub async fn serve(daemon: Arc<Daemon>, name: &str) -> io::Result<()> {
         }
     })?;
     log::info!("listening on {name}");
+    Ok(Bound { first, name: name.to_string() })
+}
+
+pub async fn serve(daemon: Arc<Daemon>, bound: Bound) -> io::Result<()> {
+    let Bound { first: mut server, name } = bound;
+    let name = name.as_str();
     loop {
         server.connect().await?;
         let client = server;

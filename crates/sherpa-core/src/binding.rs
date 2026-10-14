@@ -49,6 +49,9 @@ pub const PROFILE: &[(&str, u16)] = &[
     ("Next", 212),
 ];
 
+/// OS commands stored as a remap. The firmware has a single "Sleep / Hibernate" target
+/// (129, spec 04 §7.2), so on keyboards both entries do the same thing (the OS decides,
+/// usually sleep). Host-executed devices (DisplayPad, multi-actions) really hibernate.
 pub const OS_REMAP: &[(&str, u16)] = &[("Shutdown", 128), ("Sleep", 129), ("Hibernate", 129), ("Calculator", 195)];
 pub const OS_OTHER: &[&str] = &["Lock computer", "Run explorer", "Task manager"];
 

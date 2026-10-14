@@ -127,11 +127,32 @@ impl Store {
         Store { path: None, data: StoreData::default() }
     }
 
+    /// Load the store. A file that cannot be parsed, or that a newer version wrote, is
+    /// moved aside (never overwritten) and the last good backup (`store.json.bak`) or the
+    /// defaults are used instead, so the daemon always starts.
     pub fn load(path: &Path) -> Result<Store> {
-        let data = match fs::read_to_string(path) {
-            Ok(s) => serde_json::from_str(&s).map_err(|e| Error::Invalid(format!("{}: {e}", path.display())))?,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => StoreData::default(),
-            Err(e) => return Err(e.into()),
+        let data = match read_store(path) {
+            Ok(Some(d)) => d,
+            Ok(None) => StoreData::default(),
+            Err(LoadError::Io(e)) => return Err(e.into()),
+            Err(LoadError::Unusable(reason)) => {
+                let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S%.3f");
+                let aside = path.with_extension(format!("json.broken-{stamp}"));
+                match fs::rename(path, &aside) {
+                    Ok(()) => log::warn!("{}: {reason}; moved it to {}", path.display(), aside.display()),
+                    Err(e) => return Err(Error::Io(format!("{}: {reason}, and it could not be moved aside: {e}", path.display()))),
+                }
+                match read_store(&backup_path(path)) {
+                    Ok(Some(d)) => {
+                        log::warn!("restored the configuration from {}", backup_path(path).display());
+                        d
+                    }
+                    _ => {
+                        log::warn!("starting with a default configuration");
+                        StoreData::default()
+                    }
+                }
+            }
         };
         Ok(Store { path: Some(path.to_path_buf()), data })
     }
@@ -151,6 +172,10 @@ impl Store {
             let mut f = open_private(&tmp)?;
             f.write_all(serde_json::to_string_pretty(&self.data)?.as_bytes())?;
             f.sync_all()?;
+        }
+        // Keep the previous good file as a backup for `load`.
+        if path.exists() {
+            let _ = fs::copy(path, backup_path(path));
         }
         fs::rename(&tmp, path)?;
         Ok(())
@@ -172,6 +197,30 @@ impl Store {
     pub fn macro_named(&self, name: &str) -> Option<&Macro> {
         self.data.macros.iter().find(|m| m.name == name)
     }
+}
+
+enum LoadError {
+    Io(std::io::Error),
+    Unusable(String),
+}
+
+fn backup_path(path: &Path) -> PathBuf {
+    path.with_extension("json.bak")
+}
+
+/// `Ok(None)` when the file does not exist.
+fn read_store(path: &Path) -> std::result::Result<Option<StoreData>, LoadError> {
+    let text = match fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => return Err(LoadError::Unusable(format!("not UTF-8 ({e})"))),
+        Err(e) => return Err(LoadError::Io(e)),
+    };
+    let data: StoreData = serde_json::from_str(&text).map_err(|e| LoadError::Unusable(format!("unreadable ({e})")))?;
+    if data.version > STORE_VERSION {
+        return Err(LoadError::Unusable(format!("written by a newer version (format {} > {STORE_VERSION})", data.version)));
+    }
+    Ok(Some(data))
 }
 
 #[cfg(unix)]
@@ -218,6 +267,35 @@ mod tests {
         let t = Store::load(&path).unwrap();
         assert_eq!(t.data, s.data);
         assert_eq!(t.device("everest-max").unwrap().selected_slot(), 3);
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn corrupt_or_newer_store_is_moved_aside() {
+        let dir = std::env::temp_dir().join(format!("bc-store-bad-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("store.json");
+        let aside = || fs::read_dir(&dir).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().contains("broken")).count();
+
+        // Truncated file, no backup: defaults, bad file kept.
+        fs::write(&path, "{\"version\": 1, \"macros\": [").unwrap();
+        let s = Store::load(&path).unwrap();
+        assert_eq!(s.data, StoreData::default());
+        assert_eq!(aside(), 1);
+
+        // Two saves leave a backup of the first; a corrupt store then restores it.
+        let mut s = Store::load(&path).unwrap();
+        s.data.macros.push(Macro { name: "keep".into(), ..Default::default() });
+        s.save().unwrap();
+        s.save().unwrap();
+        fs::write(&path, "garbage").unwrap();
+        assert_eq!(Store::load(&path).unwrap().data.macros[0].name, "keep");
+
+        // A newer format is never overwritten.
+        let newer = serde_json::json!({"version": STORE_VERSION + 1}).to_string();
+        fs::write(&path, &newer).unwrap();
+        Store::load(&path).unwrap();
+        assert!(fs::read_dir(&dir).unwrap().flatten().any(|e| fs::read_to_string(e.path()).ok().as_deref() == Some(newer.as_str())));
         fs::remove_dir_all(dir).ok();
     }
 

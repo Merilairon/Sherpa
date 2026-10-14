@@ -126,23 +126,26 @@ fn main() {
     log::info!("sherpad {} (config {})", env!("CARGO_PKG_VERSION"), config_dir.display());
 
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");
-    rt.block_on(async {
+    let outcome = rt.block_on(async {
+        // Claim the endpoint first: a second instance must exit before touching devices.
+        let bound = ipc::bind(&endpoint)?;
         daemon.start();
-        let d2 = daemon.clone();
-        tokio::spawn(async move {
-            let _ = tokio::signal::ctrl_c().await;
-            log::info!("stopping");
-            d2.stop();
-            ipc::cleanup();
-            std::process::exit(0);
-        });
-        if let Err(e) = ipc::serve(daemon.clone(), &endpoint).await {
-            if e.kind() == std::io::ErrorKind::AlreadyExists {
-                log::info!("{e}; exiting");
-                std::process::exit(0);
-            }
-            eprintln!("sherpad: IPC error on {endpoint}: {e}");
-            std::process::exit(1);
+        tokio::select! {
+            r = ipc::serve_bound(daemon.clone(), bound) => r,
+            _ = ipc::shutdown_signal() => Ok(()),
         }
     });
+    // Orderly shutdown: close device handles and remove the socket file.
+    log::info!("stopping");
+    daemon.stop();
+    ipc::cleanup();
+    rt.shutdown_timeout(std::time::Duration::from_secs(2));
+    if let Err(e) = outcome {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            log::info!("{e}; exiting");
+            return;
+        }
+        eprintln!("sherpad: IPC error on {endpoint}: {e}");
+        std::process::exit(1);
+    }
 }

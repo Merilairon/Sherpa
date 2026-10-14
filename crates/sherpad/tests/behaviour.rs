@@ -566,3 +566,61 @@ fn unplug_detaches_and_signals() {
     let ids: HashSet<String> = rig.d.devices.read().unwrap().keys().cloned().collect();
     assert!(ids.is_empty());
 }
+
+// ---------------------------------------------------------------------------------------
+// Launch approval is tied to the binding's kind, arguments, button and profile
+
+#[cfg(unix)]
+#[test]
+fn approval_requires_same_kind_and_arguments() {
+    let (rig, _hid, sim) = max_rig(timing());
+    let mut rx = rig.d.bus.subscribe();
+    let press = |content: &[u8]| {
+        sim.lock().unwrap().launch.insert((1, 110), content.to_vec());
+        rig.d.call("SimulateKey", &serde_json::json!({"dev": DEV, "led": 0})).unwrap();
+        thread::sleep(Duration::from_millis(150));
+    };
+    // Bound as a folder: the same path as a program is not approved.
+    rig.d.set_binding(DEV, 1, binding(0, BindingType::Folder, "/bin/true")).unwrap();
+    press(&[&[1u8][..], b"/bin/true"].concat());
+    assert!(rig.x.take().is_empty());
+    assert!(signals(&mut rx).iter().any(|s| s.signal == "LaunchApprovalRequired"));
+    // Bound as a program without arguments: added arguments are not approved.
+    rig.d.set_binding(DEV, 1, binding(0, BindingType::Program, "/bin/true")).unwrap();
+    press(&[&[1u8][..], b"/bin/true~--evil"].concat());
+    assert!(rig.x.take().is_empty());
+    assert!(signals(&mut rx).iter().any(|s| s.signal == "LaunchApprovalRequired" && s.data["path"] == "/bin/true~--evil"));
+    // The exact bound content runs.
+    press(&[&[1u8][..], b"/bin/true"].concat());
+    assert!(wait_until(1000, || !rig.x.calls.lock().unwrap().is_empty()));
+    assert_eq!(rig.x.take(), vec!["program /bin/true"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn makalu_approval_is_per_button_and_profile() {
+    let (hid, sim) = fake::makalu();
+    let rig = rig_with(vec![fake::found(DeviceKind::Makalu67, "t", hid.clone(), None)], timing());
+    let dev = "makalu-67";
+    let mut rx = rig.d.bus.subscribe();
+    let b = MouseButton { button: 4, kind: "program".into(), value: "/bin/true".into(), value2: None };
+    rig.d.set_mouse_button(dev, 1, b).unwrap();
+    // The same path programmed on button 5 elsewhere is not approved by button 4's binding.
+    let mut path = b"/bin/true".to_vec();
+    path.resize(1024, 0);
+    sim.lock().unwrap().bulk.insert((1, 5), path.clone());
+    hid.inject(vec![0x00, 0x23, 0, 0, 5, 1, 0, 0, 0]);
+    assert!(wait_until(1000, || signals(&mut rx).iter().any(|s| s.signal == "LaunchApprovalRequired")));
+    assert!(rig.x.take().is_empty());
+    // Nor in another profile.
+    sim.lock().unwrap().bulk.insert((2, 4), path);
+    thread::sleep(Duration::from_millis(60));
+    hid.inject(vec![0x00, 0x23, 0, 0, 4, 2, 0, 0, 0]);
+    assert!(wait_until(1000, || signals(&mut rx).iter().any(|s| s.signal == "LaunchApprovalRequired")));
+    assert!(rig.x.take().is_empty());
+    // The bound button in the active profile runs.
+    thread::sleep(Duration::from_millis(60));
+    hid.inject(vec![0x00, 0x23, 0, 0, 4, 1, 0, 0, 0]);
+    assert!(wait_until(1000, || !rig.x.calls.lock().unwrap().is_empty()));
+    assert_eq!(rig.x.take(), vec!["program /bin/true"]);
+}

@@ -102,7 +102,7 @@ or the least invasive choice, is implemented.
 | Everest 60 key-content read layout (10 §4.6) | Host actions use the store's binding for the key instead of reading it back. |
 | Everest 60 Fn (154) "profile-cycle trigger" | Fn is tracked for the Fn layer; on release the active profile is re-read. |
 | Makalu 67 keyboard modifier byte, macro mouse classes `10`/`11` | HID modifier bitmap; `10` buttons (mask), `11` wheel. |
-| Makalu 67 event bytes b4/b5 order | Passed through unchanged to the bulk read; the program check accepts any program button of the device. |
+| Makalu 67 event bytes b4/b5 order | Passed through unchanged to the bulk read. For the program check b4 is taken as the button and b5 as the profile (mirroring the bulk record); the content must match that button's program in the active profile. |
 | Makalu 67 OS-command macros | Not offered (event lists unknown). |
 | DisplayPad stored icons, animations, panel save (09 §4) | Icons are uploaded live by the host (layers need that anyway); stored/animated uploads are implemented in `sherpa-core` but not used; panel save is not implemented. |
 | DisplayPad live tiles (clock, PC info, viewers) and session-lock blanking | Not implemented. |
@@ -112,4 +112,6 @@ or the least invasive choice, is implemented.
 | Adobe / DaVinci / Zoom presets | No preset data in the spec; use a keyboard shortcut binding. |
 | Profile export/import, macro export/import format | Own JSON formats (`sherpa-profile`, `sherpa-macros`); macro import also accepts Windows VK `rawcode`s. |
 | Second press of a running multi-action | Ignored (as recommended). |
+| OS command *Sleep* vs *Hibernate* | The firmware has one target for both (129). On keyboards both do what the OS maps that key to (usually sleep); the UI says so. Host-executed bindings (DisplayPad, multi-action steps) run the exact command. |
+| Launch approvals | Stricter than the spec's "exact path": the stored binding's kind must match the launch kind, and program arguments are part of the match; approvals cover the exact content. |
 | Makalu (`3282:0002`) | Not implemented (spec is a survey only). |

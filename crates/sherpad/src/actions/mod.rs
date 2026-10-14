@@ -68,9 +68,24 @@ pub fn tap_key(x: &dyn Executor, k: &HostKey, hold_ms: u64) -> Result<()> {
     x.key(k, false)
 }
 
+/// An `http`/`https` URL with a host and no whitespace or control characters.
 pub fn is_web_url(url: &str) -> bool {
-    let l = url.trim().to_ascii_lowercase();
-    (l.starts_with("http://") || l.starts_with("https://")) && l.len() > "https://".len() - 1
+    let u = url.trim();
+    if u.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return false;
+    }
+    let lower = u.to_ascii_lowercase();
+    let Some(rest) = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://")) else { return false };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let hostport = authority.rsplit('@').next().unwrap_or("");
+    let host = match hostport.strip_prefix('[') {
+        Some(v6) => match v6.split_once(']') {
+            Some((h, _)) if !h.is_empty() && h.chars().all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.') => return true,
+            _ => return false,
+        },
+        None => hostport.split(':').next().unwrap_or(""),
+    };
+    !host.is_empty() && !host.starts_with('.') && host.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '.')
 }
 
 /// Split `path~arg~arg` into the program and its arguments.
@@ -188,6 +203,34 @@ mod tests {
         assert_eq!(x.take(), vec!["key LCtrl down", "key LShift down", "key X down", "key X up", "key LShift up", "key LCtrl up"]);
         tap_shortcut(&x, &Shortcut::parse("Win+L").unwrap(), 0).unwrap();
         assert_eq!(x.take(), vec!["lock"]);
+    }
+
+    #[test]
+    fn web_urls() {
+        for ok in [
+            "http://a",
+            "https://mountain.gg/x?y#z",
+            "HTTPS://Example.com:8080/",
+            "http://user@host/p",
+            "http://[::1]:80/",
+            "https://bücher.de",
+        ] {
+            assert!(is_web_url(ok), "{ok}");
+        }
+        for bad in [
+            "https://",
+            "http://",
+            "http:///x",
+            "http://:80",
+            "http://a b",
+            "http://a\nb",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "ftp://x",
+            "https://.x",
+        ] {
+            assert!(!is_web_url(bad), "{bad}");
+        }
     }
 
     #[test]

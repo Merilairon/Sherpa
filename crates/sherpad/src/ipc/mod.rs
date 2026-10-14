@@ -41,13 +41,35 @@ pub fn default_endpoint() -> String {
 /// Serve until the listener fails. Returns `AlreadyExists` if another daemon owns the
 /// endpoint.
 pub async fn serve(daemon: Arc<Daemon>, endpoint: &str) -> io::Result<()> {
+    serve_bound(daemon, bind(endpoint)?).await
+}
+
+#[cfg(unix)]
+pub use unix::Bound;
+#[cfg(windows)]
+pub use windows::Bound;
+
+/// Claim the endpoint (single instance). Must run inside the tokio runtime.
+pub fn bind(endpoint: &str) -> io::Result<Bound> {
     #[cfg(unix)]
     {
-        unix::serve(daemon, endpoint).await
+        unix::bind(endpoint)
     }
     #[cfg(windows)]
     {
-        windows::serve(daemon, endpoint).await
+        windows::bind(endpoint)
+    }
+}
+
+/// Accept connections on an endpoint claimed with [`bind`].
+pub async fn serve_bound(daemon: Arc<Daemon>, bound: Bound) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        unix::serve(daemon, bound).await
+    }
+    #[cfg(windows)]
+    {
+        windows::serve(daemon, bound).await
     }
 }
 
@@ -98,11 +120,11 @@ where
         tokio::spawn(async move {
             if method == "Shutdown" {
                 let _ = tx.send(json!({"id": id, "result": true}).to_string());
+                // Let the reply reach the client before the runtime winds down.
                 tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                 log::info!("shutdown requested over IPC");
-                d.stop();
-                crate::ipc::cleanup();
-                std::process::exit(0);
+                request_shutdown();
+                return;
             }
             let res = tokio::task::spawn_blocking(move || d.call(&method, &params)).await;
             let msg = match res {
@@ -115,6 +137,48 @@ where
     }
     drop(tx);
     let _ = writer.await;
+}
+
+fn shutdown_notify() -> &'static tokio::sync::Notify {
+    static N: std::sync::OnceLock<tokio::sync::Notify> = std::sync::OnceLock::new();
+    N.get_or_init(tokio::sync::Notify::new)
+}
+
+/// Ask the daemon to stop (IPC `Shutdown`). `main` performs the orderly shutdown.
+pub fn request_shutdown() {
+    shutdown_notify().notify_one();
+}
+
+/// Resolves when the daemon should stop: SIGINT/SIGTERM/SIGHUP on Unix, console close,
+/// logoff or shutdown on Windows, or an IPC `Shutdown` request.
+pub async fn shutdown_signal() {
+    let ipc = shutdown_notify().notified();
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
+        let mut hup = signal(SignalKind::hangup()).expect("SIGHUP handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => log::info!("SIGINT received"),
+            _ = term.recv() => log::info!("SIGTERM received"),
+            _ = hup.recv() => log::info!("SIGHUP received"),
+            _ = ipc => {}
+        }
+    }
+    #[cfg(windows)]
+    {
+        use tokio::signal::windows;
+        let mut close = windows::ctrl_close().expect("ctrl-close handler");
+        let mut logoff = windows::ctrl_logoff().expect("logoff handler");
+        let mut shutdown = windows::ctrl_shutdown().expect("shutdown handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => log::info!("Ctrl-C received"),
+            _ = close.recv() => log::info!("console closed"),
+            _ = logoff.recv() => log::info!("user logging off"),
+            _ = shutdown.recv() => log::info!("system shutting down"),
+            _ = ipc => {}
+        }
+    }
 }
 
 /// Remove the socket file on exit (Unix).

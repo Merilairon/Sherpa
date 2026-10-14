@@ -23,6 +23,22 @@ use crate::error::{Error, Result};
 const SHORTCUT_HOLD_MS: u64 = 50;
 const MEDIA_KEYS: [u16; 4] = [26, 35, 53, 62];
 
+/// Which control on the device produced a launch request.
+#[derive(Debug, Clone, Copy)]
+enum Origin {
+    Key(KeyRef),
+    MouseButton { profile: u8, button: u8 },
+}
+
+/// Removes a key from the device's running multi-actions when dropped.
+struct BusyGuard(Arc<Attached>, u16);
+
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        self.0.busy.lock().unwrap_or_else(|e| e.into_inner()).remove(&self.1);
+    }
+}
+
 /// Where a binding lives in the store.
 #[derive(Debug, Clone, Copy)]
 pub struct KeyRef {
@@ -132,31 +148,39 @@ impl Daemon {
         self.execute_launch(a, KeyRef { led: row.led, layer: 0, layer_id: 0 }, l, false)
     }
 
-    /// Kinds 1 and 4 from the device may only run if the exact path is bound to that key
-    /// in this host's store, or the user approved it once (05 §3, security requirement).
-    fn launch_allowed(&self, a: &Attached, k: Option<KeyRef>, l: &Launch) -> bool {
-        let path = match l.kind() {
-            Some(LaunchKind::Program) => actions::split_program(&l.text).0,
-            Some(LaunchKind::Folder) => l.text.trim().to_string(),
+    /// Kinds 1 and 4 from the device may only run if exactly this content is bound to
+    /// the pressed key, with the same kind, in this host's store, or the user approved it
+    /// once (05 §3, security requirement). For programs the arguments are part of the
+    /// match, so changed device content can't add arguments to an approved program.
+    fn launch_allowed(&self, a: &Attached, origin: Origin, l: &Launch) -> bool {
+        let want = match l.kind() {
+            Some(LaunchKind::Program) => BindingType::Program,
+            Some(LaunchKind::Folder) => BindingType::Folder,
             _ => return true,
         };
+        let text = l.text.trim();
         let st = self.store();
-        if st.data.approved_launches.contains(&path) {
+        if st.data.approved_launches.iter().any(|p| p == text) {
             return true;
         }
         let Ok(cfg) = st.device(&a.key) else { return false };
-        match k {
-            Some(k) => cfg
-                .selected()
-                .binding(k.led, k.layer, k.layer_id)
-                .is_some_and(|b| matches!(b.kind, BindingType::Program | BindingType::Folder) && b.value.trim() == path),
-            // Makalu events do not name the key unambiguously: accept any program button.
-            None => cfg
-                .profiles
-                .iter()
-                .filter_map(|p| p.mouse.as_ref())
-                .flat_map(|m| m.buttons.iter())
-                .any(|b| b.kind == "program" && b.value.trim() == path),
+        let profile = cfg.selected();
+        match origin {
+            Origin::Key(k) => profile.binding(k.led, k.layer, k.layer_id).is_some_and(|b| {
+                b.kind == want && binding::launch_payload(b).and_then(|p| launch::decode(&p)).is_some_and(|bl| bl.text.trim() == text)
+            }),
+            Origin::MouseButton { profile: slot, button } => {
+                if want != BindingType::Program || slot != profile.slot {
+                    return false;
+                }
+                profile.mouse.iter().flat_map(|m| m.buttons.iter()).filter(|b| b.button == button && b.kind == "program").any(|b| {
+                    let bound = match b.value2.as_deref().filter(|a| !a.is_empty()) {
+                        Some(args) => format!("{}~{args}", b.value.trim()),
+                        None => b.value.trim().to_string(),
+                    };
+                    bound == text
+                })
+            }
         }
     }
 
@@ -164,7 +188,7 @@ impl Daemon {
         match l.kind() {
             Some(LaunchKind::HotkeySwitch) => return self.hotkey_switch(a, k),
             Some(LaunchKind::MultiAction) => return self.multi_action(a, k),
-            Some(LaunchKind::Program) | Some(LaunchKind::Folder) if !trusted && !self.launch_allowed(a, Some(k), &l) => {
+            Some(LaunchKind::Program) | Some(LaunchKind::Folder) if !trusted && !self.launch_allowed(a, Origin::Key(k), &l) => {
                 self.ask_approval(a, &l);
                 return Ok(());
             }
@@ -176,7 +200,8 @@ impl Daemon {
     }
 
     fn ask_approval(&self, a: &Attached, l: &Launch) {
-        let path = if l.kind() == Some(LaunchKind::Program) { actions::split_program(&l.text).0 } else { l.text.clone() };
+        // Approvals cover the exact content, arguments included.
+        let path = l.text.trim().to_string();
         log::warn!("{}: launch of {path:?} from device content needs approval", a.key);
         self.bus.emit("LaunchApprovalRequired", json!({"id": a.key, "kind": l.kind, "path": path}));
     }
@@ -205,20 +230,21 @@ impl Daemon {
     pub(crate) fn multi_action(&self, a: &Arc<Attached>, k: KeyRef) -> Result<()> {
         let Some(b) = self.selected_binding(a, k) else { return Ok(()) };
         let steps: Vec<MultiStep> = serde_json::from_str(&b.value)?;
-        if !a.busy.lock().unwrap().insert(k.led) {
+        if !a.busy.lock().unwrap_or_else(|e| e.into_inner()).insert(k.led) {
             log::debug!("{}: multi-action on key {} still running", a.key, k.led);
             return Ok(());
         }
         let me = self.arc();
         let a2 = a.clone();
         thread::spawn(move || {
+            // Frees the key even if a step panics.
+            let _busy = BusyGuard(a2.clone(), k.led);
             for s in &steps {
                 if let Err(e) = me.run_step(&a2, s, 1) {
                     me.report(&a2, &e);
                 }
                 thread::sleep(Duration::from_millis(s.action_delay_ms));
             }
-            a2.busy.lock().unwrap().remove(&k.led);
         });
         Ok(())
     }
@@ -441,7 +467,10 @@ impl Daemon {
                 let kind = if matches!(e, mk::Event::RunProgram { .. }) { LaunchKind::Program } else { LaunchKind::Url };
                 d.bulk_text(e4, e5).map(|text| {
                     let l = Launch { kind: kind as u8, text };
-                    if kind == LaunchKind::Program && !self.launch_allowed(a, None, &l) {
+                    // TODO(spec): the b4/b5 order is inferred; it mirrors the bulk record
+                    // (button at b2, profile at b5), so b4 is the button and b5 the profile.
+                    let origin = Origin::MouseButton { profile: e5, button: e4 };
+                    if kind == LaunchKind::Program && !self.launch_allowed(a, origin, &l) {
                         self.ask_approval(a, &l);
                         return;
                     }

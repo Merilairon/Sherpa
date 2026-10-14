@@ -704,8 +704,12 @@ function bindingFields(B, rerender, { forStep = false } = {}) {
       return [field('Action', valueSelect(cat.mouse, B.value, set('value')), forStep ? null : 'Scroll left/right are not supported by the device yet.')];
     case 'profile':
       return [field('Action', valueSelect(cat.profile, B.value, set('value')))];
-    case 'osCommand':
-      return [field('Command', valueSelect(cat.os, B.value, set('value')))];
+    case 'osCommand': {
+      // Keyboards store Sleep and Hibernate as the same firmware function (code 129).
+      const shared = !forStep && kind() !== 'displaypad' && (B.value === 'Sleep' || B.value === 'Hibernate');
+      return [field('Command', valueSelect(cat.os, B.value, (v) => { B.value = v; rerender(); })),
+        shared ? h('p', { class: 'hint' }, 'On this device Sleep and Hibernate are the same key function; your system decides which one happens (usually sleep).') : null];
+    }
     case 'macro':
       return S.macros.length
         ? [field('Macro', valueSelect(S.macros.map((m) => m.name), B.value, set('value')))]

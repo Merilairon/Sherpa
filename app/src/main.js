@@ -34,7 +34,10 @@ function saveAppSettings() {
   } catch { /* not fatal */ }
 }
 
-if (!app.requestSingleInstanceLock()) {
+// Only one instance runs; a second launch focuses the first one and exits without
+// creating a window, a tray icon or a daemon (see the guarded start-up at the end).
+const gotInstanceLock = app.requestSingleInstanceLock();
+if (!gotInstanceLock) {
   app.quit();
 }
 
@@ -90,27 +93,38 @@ async function connectDaemon() {
     if (win) win.webContents.send('bc:signal', { signal: 'DaemonDisconnected', data: {} });
     if (!quitting) setTimeout(() => reconnect(), 1000);
   });
-  await reconnect(true);
+  await reconnect();
 }
 
-async function reconnect(first = false) {
-  for (let attempt = 0; attempt < 40 && !quitting; attempt++) {
-    try {
-      await client.connect();
-      daemonInfo.connected = true;
-      daemonInfo.error = '';
-      if (win) win.webContents.send('bc:signal', { signal: 'DaemonConnected', data: {} });
-      return;
-    } catch (err) {
-      if (attempt === 0 && (first || !daemonInfo.spawned)) {
-        if (daemonInfo.binary) spawnDaemon(daemonInfo.binary, daemonInfo.endpoint);
-        else daemonInfo.error = 'sherpad binary not found';
+let reconnecting = false;
+
+// Connect to sherpad, starting it whenever nothing answers: on first launch and also
+// after a crash. Starting a second copy is harmless, it exits when another one already
+// owns the endpoint. Keeps retrying (slower after ~10 s) until it connects or we quit.
+async function reconnect() {
+  if (reconnecting) return;
+  reconnecting = true;
+  try {
+    for (let attempt = 0; !quitting; attempt++) {
+      try {
+        await client.connect();
+        daemonInfo.connected = true;
+        daemonInfo.error = '';
+        if (win) win.webContents.send('bc:signal', { signal: 'DaemonConnected', data: {} });
+        return;
+      } catch (err) {
+        if (attempt % 20 === 0) {
+          if (daemonInfo.binary) spawnDaemon(daemonInfo.binary, daemonInfo.endpoint);
+          else daemonInfo.error = 'sherpad binary not found';
+        }
+        if (daemonInfo.binary) daemonInfo.error = err.message;
+        if (attempt === 40 && win) win.webContents.send('bc:signal', { signal: 'DaemonUnavailable', data: { error: daemonInfo.error } });
+        await sleep(attempt < 40 ? 250 : 2000);
       }
-      daemonInfo.error = daemonInfo.error || err.message;
-      await sleep(250);
     }
+  } finally {
+    reconnecting = false;
   }
-  if (win) win.webContents.send('bc:signal', { signal: 'DaemonUnavailable', data: { error: daemonInfo.error } });
 }
 
 function iconPath() {
@@ -274,18 +288,20 @@ ipcMain.handle('bc:applyAppSettings', (_e, s) => {
 
 // --- lifecycle -------------------------------------------------------------------------
 
-app.on('second-instance', showWindow);
+if (gotInstanceLock) {
+  app.on('second-instance', showWindow);
 
-app.whenReady().then(async () => {
-  Menu.setApplicationMenu(null);
-  loadAppSettings();
-  createTray();
-  createWindow();
-  await connectDaemon();
-});
+  app.whenReady().then(async () => {
+    Menu.setApplicationMenu(null);
+    loadAppSettings();
+    createTray();
+    createWindow();
+    await connectDaemon();
+  });
 
-app.on('before-quit', () => { quitting = true; });
+  app.on('before-quit', () => { quitting = true; });
 
-app.on('window-all-closed', () => {
-  if (!tray || !appSettings.minimizeToTray) app.quit();
-});
+  app.on('window-all-closed', () => {
+    if (!tray || !appSettings.minimizeToTray) app.quit();
+  });
+}

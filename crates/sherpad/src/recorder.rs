@@ -19,6 +19,17 @@ pub enum Raw {
 
 pub type Sink = Arc<Mutex<Vec<(Instant, Raw)>>>;
 
+/// Recording stops collecting after this many events (a device macro holds 999).
+pub const MAX_RECORDED: usize = 2000;
+
+/// Append to the sink unless it is full.
+fn record(sink: &Sink, at: Instant, raw: Raw) {
+    let mut v = sink.lock().unwrap_or_else(|e| e.into_inner());
+    if v.len() < MAX_RECORDED {
+        v.push((at, raw));
+    }
+}
+
 pub struct Recorder {
     stop: Arc<AtomicBool>,
     sink: Sink,
@@ -102,6 +113,10 @@ mod imp {
                 let name = e.file_name().to_string_lossy().to_string();
                 if name.starts_with("event") {
                     if let Ok(f) = OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(e.path()) {
+                        // Never record our own synthetic input.
+                        if device_name(&f).as_deref() == Some(crate::actions::inject::VIRTUAL_DEVICE_NAME) {
+                            continue;
+                        }
                         files.push(f);
                     }
                 }
@@ -119,21 +134,55 @@ mod imp {
         Ok(Recorder { stop, sink, handle: Some(handle) })
     }
 
+    /// `EVIOCGNAME`: the input device's name.
+    fn device_name(f: &File) -> Option<String> {
+        let mut buf = [0u8; 256];
+        let req = (2u64 << 30) | ((buf.len() as u64) << 16) | ((b'E' as u64) << 8) | 0x06;
+        let n = unsafe { libc::ioctl(f.as_raw_fd(), req as _, buf.as_mut_ptr()) };
+        if n <= 0 {
+            return None;
+        }
+        let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        Some(String::from_utf8_lossy(&buf[..end]).into_owned())
+    }
+
     fn run(mut files: Vec<File>, keyboard: bool, mouse: bool, stop: Arc<AtomicBool>, sink: Sink) {
         let size = std::mem::size_of::<libc::input_event>();
         let mut buf = vec![0u8; size * 64];
         while !stop.load(Ordering::SeqCst) {
+            if files.is_empty() {
+                // Every device went away; wait for the user to stop recording.
+                thread::sleep(std::time::Duration::from_millis(100));
+                continue;
+            }
             let mut fds: Vec<libc::pollfd> =
                 files.iter().map(|f| libc::pollfd { fd: f.as_raw_fd(), events: libc::POLLIN, revents: 0 }).collect();
             let r = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as _, 100) };
             if r <= 0 {
                 continue;
             }
+            let mut gone = Vec::new();
             for (i, pfd) in fds.iter().enumerate() {
+                // An unplugged device reports POLLERR/POLLHUP forever: stop watching it.
+                if pfd.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0 {
+                    gone.push(i);
+                    continue;
+                }
                 if pfd.revents & libc::POLLIN == 0 {
                     continue;
                 }
-                let Ok(n) = files[i].read(&mut buf) else { continue };
+                let n = match files[i].read(&mut buf) {
+                    Ok(0) => {
+                        gone.push(i);
+                        continue;
+                    }
+                    Ok(n) => n,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => {
+                        gone.push(i);
+                        continue;
+                    }
+                };
                 let now = Instant::now();
                 for chunk in buf[..n].chunks_exact(size) {
                     let ev: libc::input_event = unsafe { std::ptr::read_unaligned(chunk.as_ptr() as *const libc::input_event) };
@@ -152,9 +201,12 @@ mod imp {
                         _ => None,
                     };
                     if let Some(raw) = raw {
-                        sink.lock().unwrap().push((now, raw));
+                        super::record(&sink, now, raw);
                     }
                 }
+            }
+            for i in gone.into_iter().rev() {
+                files.remove(i);
             }
         }
         files.clear();
@@ -180,8 +232,8 @@ mod imp {
     static SINK: Mutex<Option<(Sink, bool, bool)>> = Mutex::new(None);
 
     fn push(r: Raw) {
-        if let Some((s, _, _)) = SINK.lock().unwrap().as_ref() {
-            s.lock().unwrap().push((Instant::now(), r));
+        if let Some((s, _, _)) = SINK.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            super::record(s, Instant::now(), r);
         }
     }
 
@@ -192,6 +244,10 @@ mod imp {
     unsafe extern "system" fn kb_proc(code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
         if code == HC_ACTION as i32 && wants().0 {
             let k = &*(l.0 as *const KBDLLHOOKSTRUCT);
+            // Skip synthetic input (including our own SendInput).
+            if k.flags.0 & LLKHF_INJECTED.0 != 0 {
+                return CallNextHookEx(None, code, w, l);
+            }
             let down = matches!(w.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
             let mut vk = k.vkCode;
             if vk == 0x0D && k.flags.0 & LLKHF_EXTENDED.0 != 0 {
@@ -207,6 +263,9 @@ mod imp {
     unsafe extern "system" fn mouse_proc(code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
         if code == HC_ACTION as i32 && wants().1 {
             let m = &*(l.0 as *const MSLLHOOKSTRUCT);
+            if m.flags & LLMHF_INJECTED != 0 {
+                return CallNextHookEx(None, code, w, l);
+            }
             let r = match w.0 as u32 {
                 WM_LBUTTONDOWN => Some(Raw::Button { button: 1, down: true }),
                 WM_LBUTTONUP => Some(Raw::Button { button: 1, down: false }),

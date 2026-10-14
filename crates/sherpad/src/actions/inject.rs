@@ -6,6 +6,9 @@ use crate::error::Result;
 
 pub use imp::Injector;
 
+/// Name of the virtual input device (Linux); the macro recorder ignores it.
+pub const VIRTUAL_DEVICE_NAME: &str = "sherpad virtual input";
+
 #[cfg(target_os = "linux")]
 mod imp {
     use std::fs::{File, OpenOptions};
@@ -75,7 +78,7 @@ mod imp {
                 ioctl_int(fd, UI_SET_RELBIT, REL_WHEEL as i32)?;
                 ioctl_int(fd, UI_SET_RELBIT, REL_HWHEEL as i32)?;
                 let mut name = [0u8; 80];
-                let n = b"sherpad virtual input";
+                let n = crate::actions::inject::VIRTUAL_DEVICE_NAME.as_bytes();
                 name[..n.len()].copy_from_slice(n);
                 let s = UinputSetup { bustype: 0x03, vendor: 0x3282, product: 0xBC00, version: 1, name, ff_effects_max: 0 };
                 if unsafe { libc::ioctl(fd, UI_DEV_SETUP as _, &s as *const UinputSetup) } < 0 {
