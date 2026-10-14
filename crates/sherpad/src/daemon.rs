@@ -199,6 +199,12 @@ pub fn now_clock() -> ClockTime {
 }
 
 /// Key table of a device kind, for binding resolution.
+/// Modes the Everest Max keeps per profile (hardware, fw 0x57): game mode. Indicator LEDs,
+/// sync across profiles, game-mode status and YETI are device-wide.
+fn is_per_profile_mode(kind: DeviceKind, mode: &str) -> bool {
+    kind == DeviceKind::EverestMax && mode == "gameMode"
+}
+
 /// Retry a first command while the device is starting up: the Everest Max needs a few
 /// seconds after plug-in before it answers (hardware, fw 0x57).
 fn when_ready<T>(mut f: impl FnMut() -> Result<T>) -> Result<T> {
@@ -1314,8 +1320,31 @@ impl Daemon {
         }))
     }
 
-    pub fn set_mode(&self, dev: &str, mode: &str, value: u8) -> Result<()> {
+    /// Set a device mode. Modes the firmware keeps per profile are written to `slot`
+    /// (default: the selected profile); the others are device-wide.
+    pub fn set_mode(&self, dev: &str, mode: &str, value: u8, slot: Option<u8>) -> Result<()> {
         let a = self.require(dev)?;
+        let per_profile = is_per_profile_mode(a.kind, mode);
+        let slot = match slot {
+            Some(s) => s,
+            None => self.store().device(dev)?.selected_slot(),
+        };
+        if per_profile {
+            self.with_slot(&a, slot, || self.write_mode(&a, mode, value))?;
+        } else {
+            self.write_mode(&a, mode, value)?;
+        }
+        let mut st = self.store();
+        let cfg = st.device_mut(dev)?;
+        if per_profile {
+            cfg.profile_mut(slot)?.modes.insert(mode.to_string(), value);
+        } else {
+            cfg.modes.insert(mode.to_string(), value);
+        }
+        st.save()
+    }
+
+    fn write_mode(&self, a: &Attached, mode: &str, value: u8) -> Result<()> {
         match &a.driver {
             Driver::Everest(d) | Driver::DisplayPad(DisplayPadDev { cmd: d, .. }) => {
                 use ev::toggle as t;
@@ -1349,14 +1378,22 @@ impl Daemon {
             }
             Driver::Makalu(_) => return Err(Error::Unsupported("modes on the Makalu 67".into())),
         }
-        let mut st = self.store();
-        st.device_mut(dev)?.modes.insert(mode.to_string(), value);
-        st.save()
+        Ok(())
     }
 
-    pub fn get_modes(&self, dev: &str) -> Result<Value> {
+    /// Device modes: device-wide ones and those of `slot` (default: the selected profile).
+    /// Values are read from the device where it can answer for that profile.
+    pub fn get_modes(&self, dev: &str, slot: Option<u8>) -> Result<Value> {
         let a = self.require(dev)?;
-        let mut m = self.store().device(dev)?.modes.clone();
+        let (mut m, on_device) = {
+            let st = self.store();
+            let cfg = st.device(dev)?;
+            let slot = slot.unwrap_or(cfg.selected_slot());
+            let mut m = cfg.modes.clone();
+            m.retain(|k, _| !is_per_profile_mode(a.kind, k));
+            m.extend(cfg.profile(slot)?.modes.clone());
+            (m, slot == a.live().current_profile)
+        };
         match &a.driver {
             Driver::Everest(d) if a.kind == DeviceKind::EverestMax => {
                 use ev::toggle as t;
@@ -1367,6 +1404,9 @@ impl Daemon {
                     ("gameModeStatus", t::GAME_MODE_STATUS),
                     ("yeti", t::YETI),
                 ] {
+                    if is_per_profile_mode(a.kind, name) && !on_device {
+                        continue;
+                    }
                     if let Ok(v) = d.get_toggle(code) {
                         m.insert(name.into(), v);
                     }
@@ -1876,8 +1916,8 @@ impl Daemon {
             "StopRecording" => self.stop_recording(),
             "SetDock" => ok(self.set_dock(&dev()?, param(p, "dock")?)),
             "GetDockState" => self.dock_state(&dev()?),
-            "SetMode" => ok(self.set_mode(&dev()?, &param::<String>(p, "mode")?, param(p, "value")?)),
-            "GetModes" => self.get_modes(&dev()?),
+            "SetMode" => ok(self.set_mode(&dev()?, &param::<String>(p, "mode")?, param(p, "value")?, opt_param(p, "slot")?)),
+            "GetModes" => self.get_modes(&dev()?, opt_param(p, "slot")?),
             "Reset" => ok(self.reset(&dev()?, &param::<String>(p, "what")?)),
             "SyncClock" => {
                 let a = self.require(&dev()?)?;

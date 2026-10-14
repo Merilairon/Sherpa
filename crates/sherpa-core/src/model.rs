@@ -427,6 +427,8 @@ pub struct Profile {
     pub layers: Vec<DisplayLayer>,
     /// Store changes not yet written to the device (D-1).
     pub dirty: bool,
+    /// Device modes kept per profile by the firmware (Everest Max game mode).
+    pub modes: std::collections::BTreeMap<String, u8>,
 }
 
 impl Default for Profile {
@@ -451,6 +453,7 @@ impl Profile {
             mouse: None,
             layers: vec![DisplayLayer { id: 0, parent: None, name: "Root".into() }],
             dirty: false,
+            modes: Default::default(),
         }
     }
 

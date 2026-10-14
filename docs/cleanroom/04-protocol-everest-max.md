@@ -225,6 +225,19 @@ custom colours. `16 81 …` is a single-XY effect. Semantics unknown; skip.
 | `12 0A 00 01 <0/1>` | YETI mode |
 | `12 <0/1> 00 00 <delayMs>` | sync effect (live streaming mode) off/on; timeout 1000 ms |
 
+[H] **Scope and persistence of the toggles.** Game mode (`12 06`) is kept **per profile**.
+Indicator LEDs (`07`), sync across profiles (`08`), game-mode status (`09`) and YETI (`0A`)
+are **device-wide**. All of them survive profile switches without a Save. On a disabled
+profile (§6.4) the getters are meaningless.
+
+[H] **Sync across profiles (`12 08`) also affects lighting.** While it is on, switching to a
+profile rewrote that profile's current menu slot entry in the effect menu table (§5.7):
+- profile 2, menu 1: Color Wave → `0A`;
+- profile 1, menu 3: `0A` → Breathing.
+
+No Save is needed for this. Treat the toggle as unsafe to combine with profile switching
+until it is understood.
+
 ### 6.2 Dock data feed [P]
 | Request | Meaning |
 |---|---|

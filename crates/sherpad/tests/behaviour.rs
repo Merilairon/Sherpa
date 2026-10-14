@@ -571,6 +571,34 @@ fn lighting_is_imported_on_attach_and_switches_keep_the_device_menus() {
     assert!(hid.writes().iter().any(|p| starts(p, &[0x14, 0x00, 0x00, 0x00, 0x02, 0x02])));
 }
 
+#[test]
+fn game_mode_is_per_profile_and_other_modes_device_wide() {
+    let (rig, hid, sim) = max_rig(timing());
+    rig.d.set_mode(DEV, "gameMode", 4, None).unwrap();
+    // Game mode of another profile: written with that profile active, then back.
+    hid.clear_log();
+    rig.d.set_mode(DEV, "gameMode", 0, Some(2)).unwrap();
+    let w = hid.writes();
+    let to = w.iter().position(|p| starts(p, &[0x14, 0x00, 0x00, 0x00, 0x02])).expect("switch to 2");
+    let set = w.iter().position(|p| starts(p, &[0x12, 0x06, 0x00, 0x01, 0x00])).expect("game mode written");
+    let back = w.iter().position(|p| starts(p, &[0x14, 0x00, 0x00, 0x00, 0x01])).expect("switch back");
+    assert!(to < set && set < back);
+    rig.d.set_mode(DEV, "indicator", 0, Some(2)).unwrap();
+    {
+        let st = rig.d.store();
+        let cfg = st.device(DEV).unwrap();
+        assert_eq!(cfg.profile(1).unwrap().modes.get("gameMode"), Some(&4));
+        assert_eq!(cfg.profile(2).unwrap().modes.get("gameMode"), Some(&0));
+        assert_eq!(cfg.modes.get("indicator"), Some(&0), "device-wide");
+        assert!(!cfg.modes.contains_key("gameMode"));
+    }
+    assert_eq!(sim.lock().unwrap().toggles.get(&(2 << 8 | 6)), Some(&0));
+    let m1 = rig.d.get_modes(DEV, None).unwrap();
+    let m2 = rig.d.get_modes(DEV, Some(2)).unwrap();
+    assert_eq!((m1["gameMode"].as_u64(), m2["gameMode"].as_u64()), (Some(4), Some(0)));
+    assert_eq!(m2["indicator"].as_u64(), Some(0));
+}
+
 // ---------------------------------------------------------------------------------------
 // Other devices
 
