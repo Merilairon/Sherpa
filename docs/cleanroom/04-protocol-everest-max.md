@@ -76,7 +76,7 @@ For a getter, "reply" means that matching report.
 | Byte | Field | Rule |
 |---|---|---|
 | 2 | effectIndex | send only for {0, 1, 3, 6, 9, 11, 12}; others use §5.3 |
-| 3 | applyAll | 1 (as sent by the app), but **0 for Static** [H] |
+| 3 | applyAll | 1 as sent by the app [P]; **send 0** [H] (see below) |
 | 4 | speed | see §5.2; Static → `FF` |
 | 5 | brightness | 0..100 |
 | 6 | randColor | ColorType mapping ([03](03-data-model.md)); force 0 for Static (unless 2) and for YETI; `FF` for Off |
@@ -88,14 +88,24 @@ For a getter, "reply" means that matching report.
 
 Afterwards, persist it with Save (§8) using the entry's MenuIndex.
 
-**Static and the per-key header [H].** Static with applyAll 1 starts `14 2C 00 01`, which is
-the per-key colour chunk header (§5.5). The firmware parses it as chunk number `speed`:
-- speed `FF` is out of range, so the request is NAKed;
-- speed 0..6 is ACKed, writes the following bytes over that chunk of per-key colours and
-  switches the keyboard to Custom.
+**applyAll [H].** Effects only work with applyAll 0. With applyAll 1:
+- **Static** starts `14 2C 00 01`, which is the per-key colour chunk header (§5.5). The
+  firmware parses it as chunk number `speed`: speed `FF` is out of range, so the request is
+  NAKed. Speed 0..6 is ACKed, writes the following bytes over that chunk of per-key colours
+  and switches the keyboard to Custom.
+- **Breathing** is ACKed, but the keyboard switches to Custom. A following Save stores
+  Custom into the menu slot.
+- **Color Wave** (BlockData, §5.3) is ACKed and ignored.
 
-Send Static with **applyAll 0** (`14 2C 00 00 FF …`). It is ACKed and applied immediately.
-On Save, the firmware stores speed, direction and width as `00`.
+With **applyAll 0** each effect is ACKed and shown immediately, and FW info b9 reports it.
+Save then stores it into the menu slot, and the getters (§5.7) read it back. The firmware
+normalises what it stores:
+- applyAll `00`;
+- direction and width `FF` → `00` (Tornado's width → `02`);
+- Off's randColor `FF` → `00`, and Static's speed → `00`;
+- Custom in the custom-mode layout (§5.4);
+- with randColor 2 (random), the colour bytes are not updated and keep their previous
+  values.
 
 ### 5.2 Speed mapping [P]
 The app's speed is 0..100. Convert it before sending:
@@ -114,7 +124,7 @@ BlockData, at payload bytes 2–63:
 | Byte | Field |
 |---|---|
 | 2 | effectIndex: 4 Color Wave, 5, 7 Tornado |
-| 3 | applyAll |
+| 3 | applyAll: send 0, as for §5.1 [H] |
 | 4 | speed (remapped as in §5.2) |
 | 5 | brightness |
 | 6 | randColor |
@@ -157,6 +167,12 @@ per-key colours (§5.5) → per-LED effect table with 0 for statically painted L
 Save with MenuIndex 6.
 
 ### 5.7 Getters [P structure, I layouts]
+
+[H] On an enabled profile (§6.4), these getters return what the last Save stored: the
+effect data of that menu slot, the per-key colours and the per-LED table. Changes that were
+sent but not saved are not visible. Writes to a disabled profile are dropped, so its
+getters keep their old values.
+
 | Request | Reply |
 |---|---|
 | `11 01 00 00 02` | multi-part form A: effect menu table: profile count, effect count, then 5 × {9 menu bytes, current index} |

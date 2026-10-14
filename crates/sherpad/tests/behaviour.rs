@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use sherpa_core::everest::Variant;
 use sherpa_core::model::{BindingType, CustomLighting, DockSettings, KeyBinding, Macro, MacroEvent, MacroEventType, MouseButton};
-use sherpa_core::types::{DeviceKind, LaunchKind, Rgb};
+use sherpa_core::types::{DeviceKind, LaunchKind, MenuIndex, Rgb};
 use sherpa_core::{hex, packet};
 use sherpad::actions::RecordingExecutor;
 use sherpad::bus::Signal;
@@ -436,16 +436,21 @@ fn detached_edits_are_marked_dirty_and_reapplied() {
 
 #[test]
 fn lighting_apply_sends_then_saves() {
-    let (rig, hid, _) = max_rig(timing());
+    let (rig, hid, sim) = max_rig(timing());
     hid.clear_log();
     let mut l = sherpa_core::model::Lighting::new(sherpa_core::types::MenuIndex::Breathing);
     l.speed = 50;
     l.color1 = Rgb(0, 0xa0, 0xff);
     rig.d.set_lighting(DEV, 1, l, true).unwrap();
     let w = hid.writes();
-    assert!(starts(&w[0], &sherpa_core::unhex("14 2c 01 01 03 64 00 ff ff 00 a0 ff")));
+    assert!(starts(&w[0], &sherpa_core::unhex("14 2c 01 00 03 64 00 ff ff 00 a0 ff")));
     assert!(starts(&w[1], &[0x13, 0x55, 0x00, 0x00, 0x03]));
+    assert_eq!(sim.lock().unwrap().effect, 1, "the keyboard shows Breathing");
     assert_eq!(rig.d.store().device(DEV).unwrap().profile(1).unwrap().active_menu(), sherpa_core::types::MenuIndex::Breathing);
+    for (m, e) in [(MenuIndex::ColorWave, 4), (MenuIndex::Tornado, 7), (MenuIndex::Matrix, 9), (MenuIndex::Off, 12)] {
+        rig.d.set_lighting(DEV, 1, sherpa_core::model::Lighting::new(m), true).unwrap();
+        assert_eq!(sim.lock().unwrap().effect, e, "{m:?}");
+    }
 }
 
 #[test]

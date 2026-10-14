@@ -8,6 +8,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use sherpa_core::everest::{ExtendInfo, Variant};
+use sherpa_core::types::effect;
 use sherpa_core::{packet, tables, Packet};
 use sherpa_hid::HidIo;
 
@@ -156,6 +157,8 @@ pub struct EverestSim {
     pub variant: Variant,
     pub profile: u8,
     pub menu: u8,
+    /// Effect the keyboard is showing (FW info b9).
+    pub effect: u8,
     pub ext: ExtendInfo,
     pub clock_digital: bool,
     pub clock_12h: bool,
@@ -177,6 +180,7 @@ impl EverestSim {
             variant,
             profile: 1,
             menu: 0,
+            effect: 0,
             ext,
             clock_digital: true,
             clock_12h: false,
@@ -212,7 +216,7 @@ impl EverestSim {
         match (p[0], p[1], p[2], p[3]) {
             (0x11, 0x00, _, _) => {
                 // A disabled profile loads nothing: effect and menu read FF (fw 0x57).
-                let (effect, menu) = if self.ext.profile_enabled(self.profile) { (0x00, self.menu) } else { (0xFF, 0xFF) };
+                let (effect, menu) = if self.ext.profile_enabled(self.profile) { (self.effect, self.menu) } else { (0xFF, 0xFF) };
                 r = packet(&[0x11, 0x00, 0x00, 0x00, 0x05, 0x01, 0x00, 0x00, 0x06, effect, self.profile, menu]);
             }
             (0x11, 0x12, _, _) => r[4] = 0,
@@ -248,6 +252,10 @@ impl EverestSim {
                 self.profile = p[4];
                 self.menu = p[5];
             }
+            // Like the firmware (fw 0x57): effects apply with applyAll 0, an in-range per-key
+            // chunk switches to Custom, and effects with applyAll 1 are ignored.
+            (0x14, 0x2C, e, 0x00) => self.effect = e,
+            (0x14, 0x2C, 0x00, 0x01) => self.effect = effect::CUSTOM,
             (0x13, 0x55, _, _) => self.menu = p[4],
             (0x17, src, len, seq) => {
                 let e = self.launch.entry((self.profile, src)).or_default();

@@ -22,7 +22,7 @@ bytes. "…00" means the rest of the 64 bytes are zero.
 | G12 | Save flash, menu 6 | `13 55 00 00 06 …00` |
 | G13 | Switch to Custom, brightness 80 | `14 2c 0a 00 ff 50` then `ff` × 58 |
 | G14 | Static red, brightness 100 | `14 2c 00 00 ff 64 00 ff ff ff 00 00 …00` (applyAll 0, see 04 §5.1 [H]) |
-| G15 | Breathing, speed 50, colour `00a0ff`, brightness 100 | `14 2c 01 01 03 64 00 ff ff 00 a0 ff …00` |
+| G15 | Breathing, speed 50, colour `00a0ff`, brightness 100 | `14 2c 01 00 03 64 00 ff ff 00 a0 ff …00` (applyAll 0, see 04 §5.1 [H]) |
 | G16 | Launch content F1 (fwKey 112) → URL `https://mountain.gg` | `17 70 14 00 02 68 74 74 70 73 3a 2f 2f 6d 6f 75 6e 74 61 69 6e 2e 67 67 …00` |
 | G17 | Launch content, 130-byte payload | 3 chunks with b2/b3 = `3c 01`, `3c 02`, `0a 03` |
 | G18 | Launch content, 120-byte payload | 2 chunks with b2/b3 = `3c 01`, `3c 02` |
