@@ -11,10 +11,10 @@ All devices use USB vendor ID `0x3282` [P].
 |---|---|---|---|
 | Everest Max (keyboard + media dock + numpad) | `0x0001` | keyboard | full ([04](04-protocol-everest-max.md)) |
 | Makalu (mouse) | `0x0002` | mouse | survey ([06](06-other-devices.md)) |
-| Makalu 67 (mouse) | `0x0003`, `0x0004` | mouse | survey |
-| Everest 60 | `0x0005`, `0x0006` | keyboard | survey |
-| MacroPad | `0x0008` | keypad (several may be attached) | survey |
-| DisplayPad | `0x0009` | LCD keypad | survey |
+| Makalu 67 (mouse) | `0x0003`, `0x0004` | mouse | full ([11](11-makalu-67.md)) |
+| Everest 60 | `0x0005`, `0x0006` | keyboard | full ([10](10-everest-60.md)) |
+| MacroPad | `0x0008` | 12-key RGB keypad (several may be attached) | full ([08](08-macropad.md)) |
+| DisplayPad | `0x0009` | 12-key LCD keypad (several may be attached) | full ([09](09-displaypad.md)) |
 | Everest Max bootloader | `060B:7801` | firmware update only | out of scope |
 
 **F-DEV-1** The app lists only connected devices by default (setting

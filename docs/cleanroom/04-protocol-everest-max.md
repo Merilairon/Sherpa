@@ -99,12 +99,37 @@ The app's speed is 0..100. Convert it before sending:
 | YETI (6) | 10 | 7 | 5 | 3 | 0 |
 | others | value unchanged | | | | |
 
-### 5.3 Block effects (Color Wave, Tornado): `14 2C` + BlockData [P header, U details]
-BlockData: `effectIndex, applyAll, speed, brightness, randColor, direction, width, blockCount`,
-then 2 colour stops `{pos, r, g, b}`, 5 reserved stops, a background RGB and padding. The
-library rewrites several fields depending on effect and direction (Color Wave accepts
-direction ∈ {0, 2, 4, 6}; Tornado accepts {9, 10}). The exact rewrite rules are **[U]**.
-Implement Static/Breathing/Reactive/Matrix/YETI/Off/Custom first.
+### 5.3 Block effects (Color Wave, Tornado): `14 2C` + BlockData[62] [P]
+BlockData, at payload bytes 2–63:
+
+| Byte | Field |
+|---|---|
+| 2 | effectIndex: 4 Color Wave, 5, 7 Tornado |
+| 3 | applyAll |
+| 4 | speed (remapped as in §5.2) |
+| 5 | brightness |
+| 6 | randColor |
+| 7 | direction |
+| 8 | width |
+| 9 | stopCount |
+| 10–13, 14–17, 18–21, 22–25, … | up to 7 colour stops `{pos, r, g, b}` (`pos` 0..100, `FF` = unused) |
+| 38–40 | background RGB |
+| 41–63 | zero |
+
+The library validates and rewrites the struct before sending [P]:
+
+1. **Per-effect pre-checks:**
+   - **Color Wave (4):** set stop0.pos = 100 and stop1.pos = `FF`. Direction must be 0, 2, 4 or 6; anything else is rejected (nothing is sent).
+   - **Effect 5:** set stop0.pos, stop1.pos and direction to `FF`.
+   - **Tornado (7):** set stop0.pos = 100 and stop1.pos = `FF`. Direction must be 9 or 10; anything else is rejected.
+   - **Any other effect index:** rejected.
+2. **If randColor = 2 (random):** stop0.pos = `FF`, stopCount = 0, width = 2.
+3. **Otherwise, for Color Wave:** randColor = 0.
+   - Two colours (the caller passed randColor 16): stops become colour1@25, colour2@50, colour1@75, colour2@100, stopCount = 4, width = 2.
+   - Single colour: stopCount = 1, width = 0.
+4. **Otherwise, for Tornado:** randColor = 0, width = 0, stopCount = 1.
+5. **Otherwise:** width = 2.
+6. Remap speed (§5.2), then send `14 2C` + the 62 bytes. Persist with Save (§8) using MenuIndex 1 (Color Wave) or 2 (Tornado).
 
 ### 5.4 Switch to Custom mode [P]
 `14 2C 0A 00 FF <brightness>`, with **bytes 6–63 = `FF`**. This is the only `FF`-filled request.
@@ -133,7 +158,20 @@ Save with MenuIndex 6.
 | `11 01 00 04 <profile> <effect>` | single reply carrying EffectData for an effect value; start offset [U] |
 | `11 01 00 05 <profile> 02` | multi-part form B: light-bar data [U]. If b4 is `0A` or `FF`, `remaining` is at b5 and the payload starts at b6 instead. |
 
-### 5.8 Light bar, single-XY [U]
+### 5.8 Per-key custom effect: `ChangeCustomizeEffect` [P]
+This command sets animated per-key effects in Custom mode (the static case is §5.5). The
+input is a list of up to 171 entries `{led, r, g, b}`, sent 14 entries per chunk.
+
+Each chunk is `14 2C 0A 00 <preview> <brightness> 00 <seq>` followed by up to 14 × 4 bytes
+from b8:
+- `preview`: `FF` for a live preview, `00` to apply.
+- `seq`: 0 if the whole list is under 15 entries; otherwise 1 for the first chunk, then 3 if
+  `total ≤ offset + 14`, else 2.
+
+Unused entry slots in the last chunk are `FF`. Base Camp waits 1 ms between chunks and 3 ms
+after the last one when not previewing.
+
+### 5.9 Light bar, single-XY [U]
 `14 2D` + BarData sets a light-bar effect. `14 2D 0A 00 FF …` (7 chunks of 57) sets bar
 custom colours. `16 81 …` is a single-XY effect. Semantics unknown; skip.
 

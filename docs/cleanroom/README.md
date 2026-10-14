@@ -37,8 +37,12 @@ sends and expects*, not that the device behaves as described.
 | [03-data-model.md](03-data-model.md) | Entities, fields, enums and persistence rules |
 | [04-protocol-everest-max.md](04-protocol-everest-max.md) | Complete HID command reference for the Everest Max keyboard |
 | [05-host-actions.md](05-host-actions.md) | Key events from the device and the actions the host runs for them |
-| [06-other-devices.md](06-other-devices.md) | Everest 60, MacroPad, DisplayPad, Makalu, Makalu 67: what is known |
-| [07-acceptance.md](07-acceptance.md) | Golden packets and behavioural acceptance tests |
+| [06-other-devices.md](06-other-devices.md) | Device index and the original Makalu (survey only) |
+| [07-acceptance.md](07-acceptance.md) | Golden packets and behavioural acceptance tests (Everest Max and cross-device) |
+| [08-macropad.md](08-macropad.md) | MacroPad: differences from the Everest Max protocol, keys, vectors |
+| [09-displaypad.md](09-displaypad.md) | DisplayPad: dual-channel transport, icon and panel images, layers, vectors |
+| [10-everest-60.md](10-everest-60.md) | Everest 60: feature-report protocol, polling, Fn layer, transfers, vectors |
+| [11-makalu-67.md](11-makalu-67.md) | Makalu 67: feature-report protocol, sensor, lighting, buttons, bulk channel, vectors |
 | [`../../data/`](../../data/) | Key and layout tables (data; reuse as-is), described in [the data README](../../data/README.md) |
 
 ## Glossary
@@ -63,6 +67,6 @@ sends and expects*, not that the device behaves as described.
 2. Host actions daemon (launch content + key events).
 3. Media dock: clock, volume, PC info feed, extended settings.
 4. Everything else in [01-functional-spec.md](01-functional-spec.md).
-5. Other devices, once their protocols are specified.
+5. MacroPad ([08](08-macropad.md)), then Everest 60 ([10](10-everest-60.md)), Makalu 67 ([11](11-makalu-67.md)) and DisplayPad ([09](09-displaypad.md)).
 
-Out of scope until specified: firmware update, image upload, raw flash access, telemetry.
+Out of scope until specified: firmware update, Everest Max dock/numpad picture upload, raw flash access, telemetry.

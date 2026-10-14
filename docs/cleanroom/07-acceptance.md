@@ -80,3 +80,9 @@ Source F12 (fwKey 123 = `7b`), play once, 16 identical events (key 36 press, del
 | B9 | Media key (index 35) with launch content, dock menu index ≠ 130 | no host action |
 | B10 | Extended info with duplicate showProfile low nibbles | the write is rejected before it reaches the device |
 | B11 | Daemon IPC from another UID | refused |
+
+## 4. Device-specific vectors
+
+Each device document ends with its own vectors: MacroPad ([08](08-macropad.md) §5),
+DisplayPad ([09](09-displaypad.md) §7), Everest 60 ([10](10-everest-60.md) §7) and
+Makalu 67 ([11](11-makalu-67.md) §8). They are part of the acceptance criteria.
