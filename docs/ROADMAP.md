@@ -16,7 +16,7 @@ only.
       real hardware on Linux and Windows. *Spec*
 - [ ] Re-verify each `TODO(spec)` guess below against a real device and fix the code or
       tests accordingly. *Spec*
-- [ ] Add a hardware-in-the-loop checklist to `docs/cleanroom/07-acceptance.md`. *Spec*
+- [x] Step-by-step smoke-test checklist: [SMOKETEST.md](SMOKETEST.md).
 
 ## 1. Features the spec fully describes
 
