@@ -455,12 +455,15 @@ impl Daemon {
             let dirty: Vec<u8> = cfg.profiles.iter().filter(|p| p.dirty).map(|p| p.slot).collect();
             (dirty, st.data.settings.sync_on_attach, cfg.selected_slot())
         };
-        if !sync_all {
-            if let Driver::Everest(d) = &a.driver {
-                if a.kind == DeviceKind::EverestMax {
+        if let Driver::Everest(d) = &a.driver {
+            if a.kind == DeviceKind::EverestMax {
+                if !sync_all {
                     if let Err(e) = self.import_lighting(a, d) {
                         log::warn!("{}: importing the lighting failed: {e}", a.key);
                     }
+                }
+                if let Err(e) = self.sync_dock(a, d, sync_all) {
+                    log::warn!("{}: syncing the dock settings failed: {e}", a.key);
                 }
             }
         }
@@ -1258,26 +1261,60 @@ impl Daemon {
     // Device settings ---------------------------------------------------------------------
 
     pub fn set_dock(&self, dev: &str, dock: DockSettings) -> Result<()> {
-        let mut e = ExtendInfo::from_dock(&dock);
-        e.validate()?;
-        if let Some(a) = self.attached(dev) {
-            if let Driver::Everest(d) = &a.driver {
-                // The dock settings do not say which profiles are enabled: keep the device's.
-                if a.kind == DeviceKind::EverestMax {
-                    e.keep_profile_flags(&d.ext_info()?);
-                }
-                d.set_ext_info(&e)?;
-                if a.kind == DeviceKind::EverestMax {
-                    a.live().disabled_profiles = e.disabled_profiles();
-                }
-                d.clock_sync(now_clock(), Some((dock.clock_digital, dock.clock12h)))?;
+        ExtendInfo::from_dock(&dock).validate()?;
+        let (kind, dirty) = {
+            let kind = self.store().device(dev)?.kind;
+            match self.attached(dev) {
+                Some(a) => match self.write_dock(&a, &dock) {
+                    Ok(()) => (kind, false),
+                    Err(Error::Disconnected) => (kind, true),
+                    Err(e) => return Err(e),
+                },
+                None => (kind, true),
             }
-        }
+        };
         let mut st = self.store();
-        st.device_mut(dev)?.dock = dock;
+        let cfg = st.device_mut(dev)?;
+        cfg.dock = dock;
+        cfg.dock_dirty = dirty && matches!(kind, DeviceKind::EverestMax | DeviceKind::MacroPad);
         st.save()?;
         drop(st);
         self.bus.emit("StoreChanged", json!({"id": dev}));
+        Ok(())
+    }
+
+    /// Write dock settings. On the Everest Max, keep what they do not describe from the
+    /// device: disabled profiles, unknown `screenSetup` bits, and (via `None`) brightness.
+    fn write_dock(&self, a: &Attached, dock: &DockSettings) -> Result<()> {
+        let Driver::Everest(d) = &a.driver else { return Ok(()) };
+        let mut e = ExtendInfo::from_dock(dock);
+        if a.kind == DeviceKind::EverestMax {
+            e.keep_device_bits(&d.ext_info()?);
+        }
+        d.set_ext_info(&e)?;
+        if a.kind == DeviceKind::EverestMax {
+            a.live().disabled_profiles = e.disabled_profiles();
+        }
+        d.clock_sync(now_clock(), Some((dock.clock_digital, dock.clock12h)))
+    }
+
+    /// On attach: apply dock settings changed while detached (or all with syncOnAttach),
+    /// otherwise import the device's (device wins, D-3).
+    fn sync_dock(&self, a: &Attached, d: &EverestDev, sync_all: bool) -> Result<()> {
+        let (dirty, dock) = {
+            let st = self.store();
+            let cfg = st.device(&a.key)?;
+            (cfg.dock_dirty, cfg.dock.clone())
+        };
+        if dirty || sync_all {
+            self.write_dock(a, &dock)?;
+            self.store().device_mut(&a.key)?.dock_dirty = false;
+        } else {
+            let imported = d.ext_info()?.to_dock(d.clock_format()?, &dock);
+            self.store().device_mut(&a.key)?.dock = imported;
+        }
+        self.store().save()?;
+        self.bus.emit("StoreChanged", json!({"id": a.key}));
         Ok(())
     }
 

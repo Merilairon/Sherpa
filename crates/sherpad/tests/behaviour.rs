@@ -493,7 +493,7 @@ fn disabled_profiles_are_refused_and_edits_wait_until_enabled() {
     let w = hid.writes();
     let ext = w.iter().find(|p| starts(p, &[0x11, 0x14, 0x00, 0x01])).expect("extended info written");
     assert_eq!(&ext[15..20], &[0x01, 0x02, 0x13, 0x14, 0x15]);
-    assert!(ext[23..33].iter().all(|&b| b == 0), "brightness bytes keep the device levels");
+    assert!(ext[23..33].iter().all(|&b| b == 0), "brightness written back as read (not set)");
     assert!(w.iter().any(|p| starts(p, &[0x14, 0x00, 0x00, 0x00, 0x02])), "dirty profile re-applied");
     assert!(!rig.d.store().device(DEV).unwrap().profile(2).unwrap().dirty);
     rig.d.select_profile(DEV, 2).unwrap();
@@ -569,6 +569,50 @@ fn lighting_is_imported_on_attach_and_switches_keep_the_device_menus() {
     hid.clear_log();
     rig.d.select_profile(DEV, 2).unwrap();
     assert!(hid.writes().iter().any(|p| starts(p, &[0x14, 0x00, 0x00, 0x00, 0x02, 0x02])));
+}
+
+#[test]
+fn dock_settings_are_imported_and_written_back_unchanged() {
+    let device = sherpa_core::everest::ExtendInfo::from_bytes(&sherpa_core::unhex(
+        "01 a9 41 dc 29 bc 70 1e 00 1e 00 01 12 13 14 15 01 00 32 e4 b2 00 00 00 00 00 00 00 00",
+    ));
+    let (hid, sim) = fake::everest(Variant::EverestMax);
+    sim.lock().unwrap().ext = device.clone();
+    let rig = rig_with(vec![fake::found(DeviceKind::EverestMax, "t", hid.clone(), None)], timing());
+    let dock = rig.d.store().device(DEV).unwrap().dock.clone();
+    assert_eq!((dock.pages_enabled, dock.menu_color, dock.screen_saver_sec), (0xa9, Rgb(0xdc, 0x29, 0xbc), 30));
+    assert_eq!((dock.dock_brightness[0], dock.numpad_brightness[0], dock.dock_brightness[1]), (Some(100), Some(50), None));
+
+    // Saving the imported settings leaves the device as it was.
+    hid.clear_log();
+    rig.d.set_dock(DEV, dock.clone()).unwrap();
+    let ext = hid.writes().into_iter().find(|p| starts(p, &[0x11, 0x14, 0x00, 0x01])).unwrap();
+    assert_eq!(ext[10], 0x70, "unknown screenSetup bits kept");
+    assert_eq!(sim.lock().unwrap().ext.to_bytes(), device.to_bytes(), "unchanged");
+
+    // A level the user sets is applied, the others are kept.
+    let mut d2 = dock.clone();
+    d2.dock_brightness[0] = Some(25);
+    rig.d.set_dock(DEV, d2.clone()).unwrap();
+    let b = sim.lock().unwrap().ext.brightness;
+    assert_eq!((b[0], b[1], b[2]), (0x80 | 25, 0xb2, 0x00));
+
+    // Edits made while detached are applied on attach instead of being overwritten.
+    hid.unplug();
+    rig.backend.unplug(DEV);
+    rig.d.scan_once();
+    let mut d3 = d2.clone();
+    d3.pages_enabled = 0x09;
+    rig.d.set_dock(DEV, d3).unwrap();
+    assert!(rig.d.store().device(DEV).unwrap().dock_dirty);
+    let (hid2, sim2) = fake::everest(Variant::EverestMax);
+    sim2.lock().unwrap().ext = device;
+    rig.backend.plug(fake::found(DeviceKind::EverestMax, "t", hid2.clone(), None));
+    rig.d.scan_once();
+    assert_eq!(sim2.lock().unwrap().ext.show_menu, 0x09);
+    let cfg = rig.d.store().device(DEV).unwrap().clone();
+    assert!(!cfg.dock_dirty);
+    assert_eq!(cfg.dock.pages_enabled, 0x09);
 }
 
 #[test]
