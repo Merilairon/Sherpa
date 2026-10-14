@@ -16,9 +16,6 @@ Base Camp's binaries or decompiled code to build a compatible replacement.
 3. If something you need is marked **[U]** (unknown) or the spec is silent, do not guess
    from Base Camp. Implement the safe behaviour stated, leave a `TODO(spec)` and note it in
    your PR. The person who wrote this spec can investigate and extend it.
-4. The existing code in `basecamp_linux/` was written by the same person who analysed the
-   binaries, so it is **not** cleanroom. Treat it only as an example of the transport;
-   don't copy it if your process requires strict separation.
 
 ## Confidence tags
 
@@ -42,7 +39,7 @@ sends and expects*, not that the device behaves as described.
 | [05-host-actions.md](05-host-actions.md) | Key events from the device and the actions the host runs for them |
 | [06-other-devices.md](06-other-devices.md) | Everest 60, MacroPad, DisplayPad, Makalu, Makalu 67: what is known |
 | [07-acceptance.md](07-acceptance.md) | Golden packets and behavioural acceptance tests |
-| [`../../basecamp_linux/data/everest_max_keys.csv`](../../basecamp_linux/data/everest_max_keys.csv) | Everest Max key table (data; reuse as-is) |
+| [`../../data/`](../../data/) | Key and layout tables (data; reuse as-is), described in [the data README](../../data/README.md) |
 
 ## Glossary
 

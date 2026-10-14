@@ -10,7 +10,7 @@ switch, multi-action) also need data from the host's store.
 1. Read input reports on the vendor collection. Each report starting with `01` is a full
    key-state bitmap ([04](04-protocol-everest-max.md) §10).
 2. Diff it against the previous bitmap. Each changed bit gives *(usage, pressed)*.
-3. Translate the usage to a **layout index** with `basecamp_linux/data/everest_max_layout.csv`
+3. Translate the usage to a **layout index** with `data/everest_max_layout.csv`
    (`hid_usage` → `index`). For every physical key, the layout index equals its **LED index**.
 
 The layout table has one row per button:

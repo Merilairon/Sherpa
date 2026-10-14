@@ -1,3 +1,0 @@
-# Mountain peripherals: let the logged-in user open the hidraw nodes.
-# Install: sudo cp 70-mountain-basecamp.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
-KERNEL=="hidraw*", ATTRS{idVendor}=="3282", TAG+="uaccess"
