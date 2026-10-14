@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use sherpa_core::binding::KeyOp;
+use sherpa_core::binding::{KeyOp, REMAP_DEFAULT};
 use sherpa_core::everest::{self as ev, timeout, ClockTime, ExtendInfo, FwInfo, KeyContent, Variant};
 use sherpa_core::model::{CustomLighting, Lighting};
 use sherpa_core::types::MenuIndex;
@@ -59,13 +59,16 @@ impl EverestDev {
         Ok(())
     }
 
-    /// Write a key's binding.
-    ///
-    /// TODO(spec): the spec does not say whether bindings need a Save (`13 55`) to
-    /// persist; none is sent, to spare the flash.
+    /// Write a key's binding. No Save is needed: bindings survive a power cycle
+    /// (hardware, fw 0x57).
     pub fn apply_key(&self, src: u16, op: &KeyOp) -> Result<()> {
         let s = self.link.session()?;
         let t = timeout::DEFAULT;
+        // A remap stays in effect under macro and launch content, so the key would send
+        // (and report) the remap target. Reset it first (hardware, fw 0x57).
+        if matches!(op, KeyOp::Macro { .. } | KeyOp::Launch(_)) {
+            s.transact(&ev::remap(src, REMAP_DEFAULT), t)?;
+        }
         match op {
             KeyOp::Remap(dst) => s.transact(&ev::remap(src, *dst), t).map(|_| ()),
             KeyOp::Shortcut { key, mods } => s.transact(&ev::shortcut_remap(src, *key as u8, *mods), t).map(|_| ()),
