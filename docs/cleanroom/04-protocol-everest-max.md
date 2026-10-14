@@ -76,7 +76,7 @@ For a getter, "reply" means that matching report.
 | Byte | Field | Rule |
 |---|---|---|
 | 2 | effectIndex | send only for {0, 1, 3, 6, 9, 11, 12}; others use §5.3 |
-| 3 | applyAll | 1 (as sent by the app) |
+| 3 | applyAll | 1 (as sent by the app), but **0 for Static** [H] |
 | 4 | speed | see §5.2; Static → `FF` |
 | 5 | brightness | 0..100 |
 | 6 | randColor | ColorType mapping ([03](03-data-model.md)); force 0 for Static (unless 2) and for YETI; `FF` for Off |
@@ -87,6 +87,15 @@ For a getter, "reply" means that matching report.
 | 21–63 | reserved | 0 |
 
 Afterwards, persist it with Save (§8) using the entry's MenuIndex.
+
+**Static and the per-key header [H].** Static with applyAll 1 starts `14 2C 00 01`, which is
+the per-key colour chunk header (§5.5). The firmware parses it as chunk number `speed`:
+- speed `FF` is out of range, so the request is NAKed;
+- speed 0..6 is ACKed, writes the following bytes over that chunk of per-key colours and
+  switches the keyboard to Custom.
+
+Send Static with **applyAll 0** (`14 2C 00 00 FF …`). It is ACKed and applied immediately.
+On Save, the firmware stores speed, direction and width as `00`.
 
 ### 5.2 Speed mapping [P]
 The app's speed is 0..100. Convert it before sending:

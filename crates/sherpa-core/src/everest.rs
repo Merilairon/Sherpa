@@ -219,7 +219,10 @@ pub fn simple_effect(effect_index: u8, l: &Lighting) -> ProtoResult<Packet> {
     let mut p = packet(&[0x14, 0x2C]);
     let rand = rand_color(effect_index, l.color_type);
     p[2] = effect_index;
-    p[3] = 1;
+    // `14 2C 00 01` is the per-key colour chunk header (§5.5): with applyAll = 1 the
+    // firmware parses Static as chunk number `speed`, NAKs `FF` and overwrites per-key
+    // colours otherwise. Static is sent with applyAll = 0 (hardware, fw 0x57).
+    p[3] = if effect_index == effect::STATIC { 0 } else { 1 };
     p[4] = if effect_index == effect::STATIC { 0xFF } else { map_speed(effect_index, l.speed) };
     p[5] = l.brightness.min(100);
     p[6] = rand;
@@ -848,13 +851,25 @@ mod tests {
         let mut l = Lighting::new(MenuIndex::Static);
         l.color1 = Rgb(255, 0, 0);
         l.brightness = 100;
-        assert_pkt(&lighting_packet(&l).unwrap(), "14 2c 00 01 ff 64 00 ff ff ff 00 00");
+        assert_pkt(&lighting_packet(&l).unwrap(), "14 2c 00 00 ff 64 00 ff ff ff 00 00");
 
         let mut l = Lighting::new(MenuIndex::Breathing);
         l.speed = 50;
         l.color1 = Rgb(0x00, 0xa0, 0xff);
         l.brightness = 100;
         assert_pkt(&lighting_packet(&l).unwrap(), "14 2c 01 01 03 64 00 ff ff 00 a0 ff");
+    }
+
+    #[test]
+    fn effects_never_use_the_per_key_header() {
+        for m in MenuIndex::ALL.into_iter().filter(|&m| m != MenuIndex::Custom) {
+            for ct in [ColorType::Single, ColorType::Dual, ColorType::Random] {
+                let mut l = Lighting::new(m);
+                l.color_type = ct;
+                let p = lighting_packet(&l).unwrap();
+                assert_ne!(&p[..4], &[0x14, 0x2C, 0x00, 0x01], "{m:?} {ct:?}");
+            }
+        }
     }
 
     #[test]
