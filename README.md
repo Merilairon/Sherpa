@@ -9,6 +9,8 @@ The protocol was traced from Mountain Base Camp 1.9.10. See:
 * [docs/reverse-engineering-report.md](docs/reverse-engineering-report.md): architecture,
   how macros and RGB reach the device, and what is proven, inferred and still unknown
 * [docs/protocol-everest-max.md](docs/protocol-everest-max.md): byte-level packet reference
+* [docs/cleanroom/](docs/cleanroom/README.md): functional and technical specification for a
+  cleanroom reimplementation, with the rules the implementing agent must follow
 
 > **Status:** packet layouts are reproduced from the shipped SDK and covered by golden-byte
 > tests. They have **not** been tried on a physical keyboard yet. Start without `--save`,

@@ -113,8 +113,8 @@ chunks:  15 <src> <count ≤ 15> <0 first | 1 continuation> <count × 4-byte eve
 | 1 | `page << 4 \| action`. Page 0 = keyboard, 1 = mouse, F = end. Action 1 = release, 2 = press, 3 = wheel, F = end |
 | 2–3 | delay before the next event, ms, little-endian |
 
-Base Camp always appends the terminator `FF FF 00 00`. `type`: 1 = "play-one", 4 = "play-two",
-3 = anything else (`GetMacroInputContent`). `times` is always 1.
+Base Camp always appends the terminator `FF FF 00 00`. `type`: 1 = Play once, 4 = Hold
+(repeat while held), 3 = Repeat (until pressed again); these come from the macro editor's labels and help text. `times` is always 1.
 `src` is the `DLLKeyId` of the key that triggers the macro. There is no profile argument.
 
 ## Key table

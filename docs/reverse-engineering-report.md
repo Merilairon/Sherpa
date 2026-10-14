@@ -97,7 +97,7 @@ Re-saving a macro rewrites it onto every key bound to it. For Everest 60 Fn-laye
 
 ### Inferred (consistent with the code, not observed)
 
-* **`iType` meanings:** the code only gives the names "play-one" (1) and "play-two" (4), plus 3 as the default. The firmware behaviour ("play once", "repeat while held", "toggle") isn't in the code.
+* **`iType` meanings:** now confirmed from the macro editor's labels: 1 Play once, 4 Hold, 3 Repeat. How the firmware times repeats is still unobserved.
 * **Macro storage:** macros and lighting go to the firmware's active on-board profile, because `SetFullMacroData` has no profile argument.
 * **Per-LED effect id:** `SetCustomizeTable` value 0 means "static" for that LED, because the UI writes `Lighting.EffIndex` there.
 * **Multi-collection interfaces:** on Linux the vendor collection may share a hidraw node with other collections. Reading the report ID from the descriptor reproduces what `HidP_GetCaps` gives the SDK.
