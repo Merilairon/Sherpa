@@ -507,6 +507,26 @@ fn disabled_profiles_are_refused_and_edits_wait_until_enabled() {
     assert_eq!(&ext[15..20], &[0x01, 0x02, 0x13, 0x14, 0x15]);
 }
 
+#[test]
+fn no_writes_while_the_keyboard_sits_on_a_disabled_profile() {
+    // The keyboard boots into its last profile even if that one is disabled.
+    let (hid, sim) = fake::everest(Variant::EverestMax);
+    {
+        let mut s = sim.lock().unwrap();
+        s.ext.show_profile = [0x01, 0x12, 0x13, 0x14, 0x15];
+        s.profile = 2;
+    }
+    let rig = rig_with(vec![fake::found(DeviceKind::EverestMax, "t", hid.clone(), None)], timing());
+    assert_eq!(rig.d.store().device(DEV).unwrap().selected_slot(), 2);
+    hid.clear_log();
+    rig.d.set_binding(DEV, 2, binding(114, BindingType::Url, "https://example.com")).unwrap();
+    rig.d.set_lighting(DEV, 2, sherpa_core::model::Lighting::new(MenuIndex::Breathing), true).unwrap();
+    let l = sherpa_core::model::Lighting::new(MenuIndex::Static);
+    assert_eq!(rig.d.preview_lighting(DEV, &l).unwrap_err(), sherpad::error::Error::ProfileDisabled(2));
+    assert!(hid.writes().iter().all(|p| p[0] == 0x11), "only reads: {:?}", hid.writes());
+    assert!(rig.d.store().device(DEV).unwrap().profile(2).unwrap().dirty);
+}
+
 // ---------------------------------------------------------------------------------------
 // Other devices
 

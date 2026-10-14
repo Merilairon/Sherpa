@@ -333,6 +333,13 @@ shows. Uploading pictures is out of scope.
   | reset to default after having content | `size` 0, keyType `FF` |
   | never written | NAK |
 
+  Reading any index is safe, but a slot can hold a foreign record, for example the effect
+  data written to a disabled profile (§8). Act only on keyType 7 with a known launch kind,
+  and cut at `size`. Resetting the key (`14 20 <fwKey> FF 00` on that profile) turns a
+  foreign record into the `size 0` / `FF` form [H]. Once, a read made right after a
+  profile switch returned a 28-byte garbage record (keyType 0) for a key without content;
+  reading it again returned NAK [H].
+
 ## 8. Profiles and persistence [P]
 | Request | Meaning | Timeout |
 |---|---|---|
@@ -348,9 +355,13 @@ shows. Uploading pictures is out of scope.
 (§6.4):
 - the switch is ACKed and FW info reports that profile, but effect and menu read `FF`;
 - the keyboard keeps showing the previous lighting;
-- lighting, key and Save writes are ACKed but dropped.
+- lighting, key and Save writes are ACKed, but they don't reach that profile. Most are
+  dropped. Some are **stored over another profile's key data**: launch content and the
+  Custom-mode command, written while the keyboard was on disabled profiles 2 and 3, showed
+  up in profile 1's key-content slots of Down (LED 113) and Right (LED 122).
 
-Check the flag before switching or writing, and enable the profile first. Slot 6 is also
+Check the flag before switching or writing, and enable the profile first. This also applies
+when the keyboard already sits on a disabled profile: it boots into its last profile. Slot 6 is also
 accepted. It maps to profile 0 of the lighting getters (§5.7) and holds Off in menus 1–8.
 
 ## 9. Multi-part replies [P]
