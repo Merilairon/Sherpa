@@ -459,6 +459,46 @@ fn static_lighting_and_reset_are_accepted() {
     rig.d.reset_profile(DEV, 1).unwrap();
 }
 
+#[test]
+fn disabled_profiles_are_refused_and_edits_wait_until_enabled() {
+    let (hid, sim) = fake::everest(Variant::EverestMax);
+    sim.lock().unwrap().ext.show_profile = [0x01, 0x12, 0x13, 0x14, 0x15];
+    let rig = rig_with(vec![fake::found(DeviceKind::EverestMax, "t", hid.clone(), None)], timing());
+    let live = &rig.d.get_device(DEV).unwrap()["live"];
+    assert_eq!(live["disabledProfiles"], serde_json::json!([2, 3, 4, 5]));
+
+    // Selecting is refused before anything is sent.
+    hid.clear_log();
+    let e = rig.d.select_profile(DEV, 2).unwrap_err();
+    assert_eq!(e, sherpad::error::Error::ProfileDisabled(2));
+    assert!(hid.writes().is_empty());
+    assert_eq!(rig.d.store().device(DEV).unwrap().selected_slot(), 1);
+
+    // Edits are stored and marked dirty instead of being dropped by the keyboard.
+    let l = sherpa_core::model::Lighting::new(sherpa_core::types::MenuIndex::Breathing);
+    rig.d.set_lighting(DEV, 2, l, true).unwrap();
+    assert!(hid.writes().is_empty());
+    assert!(rig.d.store().device(DEV).unwrap().profile(2).unwrap().dirty);
+
+    // Enabling rewrites the extended info with brightness kept, then applies the edit.
+    rig.d.set_profile_enabled(DEV, 2, true).unwrap();
+    let w = hid.writes();
+    let ext = w.iter().find(|p| starts(p, &[0x11, 0x14, 0x00, 0x01])).expect("extended info written");
+    assert_eq!(&ext[15..20], &[0x01, 0x02, 0x13, 0x14, 0x15]);
+    assert!(ext[23..33].iter().all(|&b| b == 0), "brightness bytes keep the device levels");
+    assert!(w.iter().any(|p| starts(p, &[0x14, 0x00, 0x00, 0x00, 0x02])), "dirty profile re-applied");
+    assert!(!rig.d.store().device(DEV).unwrap().profile(2).unwrap().dirty);
+    rig.d.select_profile(DEV, 2).unwrap();
+
+    // The active profile cannot be disabled; dock settings keep the flags.
+    assert!(rig.d.set_profile_enabled(DEV, 2, false).is_err());
+    hid.clear_log();
+    rig.d.set_dock(DEV, DockSettings::default()).unwrap();
+    let w = hid.writes();
+    let ext = w.iter().find(|p| starts(p, &[0x11, 0x14, 0x00, 0x01])).unwrap();
+    assert_eq!(&ext[15..20], &[0x01, 0x02, 0x13, 0x14, 0x15]);
+}
+
 // ---------------------------------------------------------------------------------------
 // Other devices
 

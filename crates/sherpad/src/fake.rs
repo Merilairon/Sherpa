@@ -211,16 +211,28 @@ impl EverestSim {
         let mut r = *p;
         match (p[0], p[1], p[2], p[3]) {
             (0x11, 0x00, _, _) => {
-                r = packet(&[0x11, 0x00, 0x00, 0x00, 0x05, 0x01, 0x00, 0x00, 0x06, 0x00, self.profile, self.menu]);
+                // A disabled profile loads nothing: effect and menu read FF (fw 0x57).
+                let (effect, menu) = if self.ext.profile_enabled(self.profile) { (0x00, self.menu) } else { (0xFF, 0xFF) };
+                r = packet(&[0x11, 0x00, 0x00, 0x00, 0x05, 0x01, 0x00, 0x00, 0x06, effect, self.profile, menu]);
             }
             (0x11, 0x12, _, _) => r[4] = 0,
-            (0x11, 0x14, 0x00, 0x00) => r[4..33].copy_from_slice(&self.ext.to_bytes()),
+            (0x11, 0x14, 0x00, 0x00) => {
+                r[4..33].copy_from_slice(&self.ext.to_bytes());
+                // Brightness always reads back as 0 (fw 0x57).
+                r[23..33].fill(0);
+            }
             (0x11, 0x14, 0x00, 0x01) => {
                 if self.variant == Variant::EverestMax {
                     let mut e = ExtendInfo::from_bytes(&p[4..33]);
                     e.dock_plug = self.ext.dock_plug;
                     e.numpad_plug = self.ext.numpad_plug;
                     e.menu_index = self.ext.menu_index;
+                    // A byte without 0x80 keeps the current level.
+                    for (new, old) in e.brightness.iter_mut().zip(self.ext.brightness) {
+                        if *new & 0x80 == 0 {
+                            *new = old;
+                        }
+                    }
                     self.ext = e;
                 }
             }

@@ -10,6 +10,8 @@ pub enum Error {
     Invalid(String),
     NotFound(String),
     Unsupported(String),
+    /// The firmware profile is disabled on the keyboard (`showProfile` flag).
+    ProfileDisabled(u8),
 }
 
 impl fmt::Display for Error {
@@ -22,6 +24,7 @@ impl fmt::Display for Error {
             Error::Invalid(e) => write!(f, "{e}"),
             Error::NotFound(e) => write!(f, "not found: {e}"),
             Error::Unsupported(e) => write!(f, "not supported: {e}"),
+            Error::ProfileDisabled(n) => write!(f, "profile {n} is disabled on the keyboard; enable it first"),
         }
     }
 }

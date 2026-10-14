@@ -369,18 +369,25 @@ function renderDevice() {
 
 function renderProfiles() {
   const c = cfg();
-  return h('div', { class: 'profiles' }, c.profiles.slice().sort((a, b) => a.slot - b.slot).map((p) =>
-    h('div', {
-      class: `profile-chip ${p.selected ? 'sel' : ''}`,
-      title: p.linkedExe ? `Linked to ${p.linkedExe}` : '',
+  const disabled = (S.dev.live && S.dev.live.disabledProfiles) || [];
+  return h('div', { class: 'profiles' }, c.profiles.slice().sort((a, b) => a.slot - b.slot).map((p) => {
+    const off = disabled.includes(p.slot);
+    return h('div', {
+      class: `profile-chip ${p.selected ? 'sel' : ''} ${off ? 'off' : ''}`,
+      title: off ? 'Disabled on the keyboard' : (p.linkedExe ? `Linked to ${p.linkedExe}` : ''),
       onclick: async () => {
         if (p.selected) return;
+        if (off) {
+          if (!await confirmBox('Enable profile', `Profile ${p.slot} is disabled on the keyboard, so it cannot be selected. Enable it?`, 'Enable')) return;
+          try { await call('SetProfileEnabled', { dev: S.devId, slot: p.slot, enabled: true }); } catch { return; }
+        }
         await call('SelectProfile', { dev: S.devId, slot: p.slot }).catch(() => {});
         resetDrafts();
         await loadDevice();
         render();
       },
-    }, h('span', { class: 'n' }, p.slot), p.name, p.linkedExe ? h('span', { class: 'link' }, '⛓') : null, p.dirty ? h('span', { class: 'link', title: 'Changes pending until the device is connected' }, '•') : null)));
+    }, h('span', { class: 'n' }, p.slot), p.name, p.linkedExe ? h('span', { class: 'link' }, '⛓') : null, p.dirty ? h('span', { class: 'link', title: 'Changes pending until the device is connected or the profile is enabled' }, '•') : null);
+  }));
 }
 
 function renderTab() {

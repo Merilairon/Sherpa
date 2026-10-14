@@ -128,8 +128,20 @@ pub struct Live {
     pub dock_menu: u8,
     pub display_layer: u32,
     pub effect: u8,
+    /// Firmware profiles disabled on the keyboard (Everest Max `showProfile` flag).
+    pub disabled_profiles: Vec<u8>,
     #[serde(skip)]
     pub fn_held: bool,
+}
+
+impl Live {
+    /// Update from an extended-info read.
+    pub fn set_ext(&mut self, e: &ExtendInfo) {
+        self.dock_side = e.dock_side().into();
+        self.numpad_side = e.numpad_side().into();
+        self.dock_menu = e.menu_index;
+        self.disabled_profiles = e.disabled_profiles();
+    }
 }
 
 pub struct Attached {
@@ -386,10 +398,7 @@ impl Daemon {
                 drop(l);
                 if a.kind == DeviceKind::EverestMax {
                     if let Ok(e) = d.ext_info() {
-                        let mut l = a.live();
-                        l.dock_side = e.dock_side().into();
-                        l.numpad_side = e.numpad_side().into();
-                        l.dock_menu = e.menu_index;
+                        a.live().set_ext(&e);
                     }
                 }
                 self.store().device_mut(&a.key)?.layout = layout;
@@ -470,6 +479,10 @@ impl Daemon {
         };
         if current == slot || matches!(a.driver, Driver::Makalu(_)) {
             return f();
+        }
+        // The keyboard ACKs writes to a disabled profile but drops them.
+        if a.live().disabled_profiles.contains(&slot) {
+            return Err(Error::ProfileDisabled(slot));
         }
         self.switch_device_profile(a, slot, menu)?;
         let r = f();
@@ -564,7 +577,8 @@ impl Daemon {
         match self.attached(dev) {
             Some(a) => match self.with_slot(&a, slot, || device(&a, &preview, &macros)) {
                 Ok(()) => {}
-                Err(Error::Disconnected) => dirty = true,
+                // Kept and re-applied on attach or when the profile is enabled.
+                Err(Error::Disconnected | Error::ProfileDisabled(_)) => dirty = true,
                 Err(e) => return Err(e),
             },
             None => dirty = writes_bindings(kind) || kind == DeviceKind::Makalu67,
@@ -704,6 +718,9 @@ impl Daemon {
             (p.active_menu(), p.dirty)
         };
         if let Some(a) = self.attached(dev) {
+            if a.live().disabled_profiles.contains(&slot) {
+                return Err(Error::ProfileDisabled(slot));
+            }
             self.switch_device_profile(&a, slot, menu)?;
             if dirty && self.full_apply(&a, slot).is_ok() {
                 self.store().device_mut(dev)?.profile_mut(slot)?.dirty = false;
@@ -1146,11 +1163,18 @@ impl Daemon {
     // Device settings ---------------------------------------------------------------------
 
     pub fn set_dock(&self, dev: &str, dock: DockSettings) -> Result<()> {
-        let e = ExtendInfo::from_dock(&dock);
+        let mut e = ExtendInfo::from_dock(&dock);
         e.validate()?;
         if let Some(a) = self.attached(dev) {
             if let Driver::Everest(d) = &a.driver {
+                // The dock settings do not say which profiles are enabled: keep the device's.
+                if a.kind == DeviceKind::EverestMax {
+                    e.keep_profile_flags(&d.ext_info()?);
+                }
                 d.set_ext_info(&e)?;
+                if a.kind == DeviceKind::EverestMax {
+                    a.live().disabled_profiles = e.disabled_profiles();
+                }
                 d.clock_sync(now_clock(), Some((dock.clock_digital, dock.clock12h)))?;
             }
         }
@@ -1159,6 +1183,33 @@ impl Daemon {
         st.save()?;
         drop(st);
         self.bus.emit("StoreChanged", json!({"id": dev}));
+        Ok(())
+    }
+
+    /// Enable or disable a firmware profile on the keyboard (Everest Max `showProfile`
+    /// flag). Edits made while it was disabled are applied when it is enabled.
+    pub fn set_profile_enabled(&self, dev: &str, slot: u8, enabled: bool) -> Result<()> {
+        let a = self.require(dev)?;
+        let d = match &a.driver {
+            Driver::Everest(d) if a.kind == DeviceKind::EverestMax => d,
+            _ => return Err(Error::Unsupported("enabling profiles on this device".into())),
+        };
+        if !enabled && a.live().current_profile == slot {
+            return invalid(format!("profile {slot} is active on the keyboard; switch to another profile first"));
+        }
+        let mut e = d.ext_info()?.rewrite();
+        if !e.set_profile_enabled(slot, enabled) {
+            return invalid(format!("profile {slot} is not in the keyboard's profile list"));
+        }
+        d.set_ext_info(&e)?;
+        a.live().disabled_profiles = e.disabled_profiles();
+        let dirty = self.store().device(dev)?.profile(slot)?.dirty;
+        if enabled && dirty && self.full_apply(&a, slot).is_ok() {
+            let mut st = self.store();
+            st.device_mut(dev)?.profile_mut(slot)?.dirty = false;
+            st.save()?;
+        }
+        self.bus.emit("DeviceChanged", json!({"id": dev}));
         Ok(())
     }
 
@@ -1626,7 +1677,7 @@ impl Daemon {
             if now >= next_refresh {
                 if let Some(s) = d.link.try_session() {
                     if let Ok(r) = s.transact(&ev::ext_info_request(), ev::timeout::EXT_INFO) {
-                        a.live().dock_menu = ev::parse_ext_info(&r).menu_index;
+                        a.live().set_ext(&ev::parse_ext_info(&r));
                     }
                 }
                 next_refresh = now + t.dock_refresh;
@@ -1667,10 +1718,7 @@ impl Daemon {
     pub(crate) fn refresh_dock_menu(&self, a: &Attached) {
         if let Some(d) = a.driver.everest() {
             if let Ok(e) = d.ext_info() {
-                let mut l = a.live();
-                l.dock_menu = e.menu_index;
-                l.dock_side = e.dock_side().into();
-                l.numpad_side = e.numpad_side().into();
+                a.live().set_ext(&e);
             }
         }
     }
@@ -1709,6 +1757,7 @@ impl Daemon {
             "GetLayout" => self.get_layout(&dev()?),
             "GetProfiles" => Ok(serde_json::to_value(&self.store().device(&dev()?)?.profiles)?),
             "SelectProfile" => ok(self.select_profile(&dev()?, slot()?)),
+            "SetProfileEnabled" => ok(self.set_profile_enabled(&dev()?, slot()?, param(p, "enabled")?)),
             "UpdateProfile" => ok(self.update_profile(&dev()?, slot()?, p)),
             "ResetProfile" => ok(self.reset_profile(&dev()?, slot()?)),
             "CopyProfile" => ok(self.copy_profile(&dev()?, param(p, "from")?, param(p, "to")?)),

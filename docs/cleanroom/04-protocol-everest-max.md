@@ -223,13 +223,22 @@ ExtendInfo is **29 packed bytes**:
 | 6 | screenSetup | bit0 screen saver on, bit1 auto turn-off on; type bits [U] |
 | 7–8 | screenSaver u16 | ≤ 1800 |
 | 9–10 | turnOff u16 | ≤ 1800 |
-| 11–15 | showProfile[5] | each non-zero, with a distinct low nibble, or the library rejects the whole write |
+| 11–15 | showProfile[5] | each non-zero, with a distinct low nibble, or the library rejects the whole write. Low nibble = profile number; bit `0x10` = profile **disabled** [H] (see below) |
 | 16 | numpadPlug | read: bit0 right, bit1 left. Write: 2 |
 | 17 | pixelShiftTime | |
 | 18 | dockDoubleClick | ≤ 200; Base Camp writes 50 |
-| 19–28 | brightness[5] × {dock, numpad} | `0x80 \| level`, level ∈ {0, 25, 50, 75, 100}; the library quantises other values to the nearest level |
+| 19–28 | brightness[5] × {dock, numpad} | `0x80 \| level`, level ∈ {0, 25, 50, 75, 100}; the library quantises other values to the nearest level. Reads back as `00`; a written byte without `0x80` keeps the current level [H] |
 
 Validation is done host-side by the library [P]. Do it in your code too.
+
+**Observed on hardware [H]:**
+- **Read-modify-write is safe:** rewriting the block as read, with the write rules applied
+  (dockPlug 2, menuIndex 0, numpadPlug 2) and the brightness bytes left at `00`, changes
+  nothing visible. Writing menuIndex 0 does not change the page the dock shows.
+- **Disabled profiles:** a keyboard set up with one profile reads `showProfile = 01 12 13 14 15`,
+  so profiles 2–5 carry `0x10`. Clearing `0x10` enables the profile: switching to it then
+  loads its lighting. Setting it disables the profile again. See §8 for what a disabled
+  profile does.
 
 ### 6.5 Dock menu index values seen [P]
 65 volume page · 97 CPU · 98 GPU · 99 disk · 100 network · 101 RAM · 113 APM ·
@@ -292,13 +301,22 @@ shows. Uploading pictures is out of scope.
 ## 8. Profiles and persistence [P]
 | Request | Meaning | Timeout |
 |---|---|---|
-| `14 00 00 00 <slot 1..5> <menuIndex 0..8>` | switch profile and select the active lighting entry | 950 ms |
+| `14 00 00 00 <slot 1..5> <menuIndex 0..8>` | switch profile and select the active lighting entry (menuIndex is 0-based; 0 = Static is valid [H]) | 950 ms |
 | `13 55 00 00 <menuIndex>` | save current state to flash | 1300 ms |
 | `13 40 00 00 <all 0/1>` | reset flash (factory) | 12000 ms |
 | `13 41 00 00 <profileMask>` | reset dock pictures | 5000 ms |
 | `13 42 00 00 <p1..p5>` | reset numpad pictures per profile | 5000 ms |
 | `13 60` | reset all key bindings | 3000 ms |
 | `13 61` | reset all lighting effects | 3000 ms |
+
+**Disabled profiles [H].** Switching to a profile whose `showProfile` entry has `0x10` set
+(§6.4):
+- the switch is ACKed and FW info reports that profile, but effect and menu read `FF`;
+- the keyboard keeps showing the previous lighting;
+- lighting, key and Save writes are ACKed but dropped.
+
+Check the flag before switching or writing, and enable the profile first. Slot 6 is also
+accepted. It maps to profile 0 of the lighting getters (§5.7) and holds Off in menus 1–8.
 
 ## 9. Multi-part replies [P]
 - The first matching reply tells how many parts follow (a countdown). Each part's position is
