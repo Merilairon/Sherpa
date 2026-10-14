@@ -26,6 +26,8 @@ pub struct DeviceConfig {
     pub layout: u8,
     /// Last known device toggles (game mode, indicator LEDs, …), for the UI.
     pub modes: BTreeMap<String, u8>,
+    /// Dock settings changed while detached, to apply on attach (D-1).
+    pub dock_dirty: bool,
 }
 
 impl Default for DeviceConfig {
@@ -55,7 +57,15 @@ impl DeviceConfig {
                 p
             })
             .collect();
-        DeviceConfig { kind, name: kind.name().to_string(), profiles, dock: DockSettings::default(), layout: 0, modes: BTreeMap::new() }
+        DeviceConfig {
+            kind,
+            name: kind.name().to_string(),
+            profiles,
+            dock: DockSettings::default(),
+            layout: 0,
+            modes: BTreeMap::new(),
+            dock_dirty: false,
+        }
     }
 
     pub fn profile(&self, slot: u8) -> Result<&Profile> {

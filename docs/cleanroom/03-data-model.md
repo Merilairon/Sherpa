@@ -146,7 +146,7 @@ column [P].
 | `screenSaverSec` | u16 | `screenSaver` (unit [U], probably seconds) |
 | `turnOffSec` | u16 | `turnOff` |
 | `profilesShown` | u8[5] | `showProfile` (the device's `0x10` "disabled" flags are kept on write [H]) |
-| `dockBrightness[5]`, `numpadBrightness[5]` | u8 | `exBrightness` |
+| `dockBrightness[5]`, `numpadBrightness[5]` | u8 or null | `exBrightness`. [H] null = not set (`00`, the keyboard default); a level is `0x80 \| level`. Imported on attach, so saving keeps what is on the keyboard |
 
 Screen saver types [P]: 0 Image, 1/2 Clock, 3 Stopwatch, 4 Timer, 7 Volume, 8 Brightness,
 9 CPU, 10 GPU, 11 HDD, 12 Internet, 13 RAM, 14 APM.

@@ -123,6 +123,11 @@ impl EverestDev {
         self.cmd(&p).map(|_| ())
     }
 
+    /// Clock format `(digital, 12-hour)`.
+    pub fn clock_format(&self) -> Result<(bool, bool)> {
+        Ok(ev::parse_clock_format(&self.cmd(&ev::clock_format_request())?))
+    }
+
     /// Clock sync: AP enable, read the format, send the time with that format unchanged
     /// (or with `format` when given).
     pub fn clock_sync(&self, now: ClockTime, format: Option<(bool, bool)>) -> Result<()> {

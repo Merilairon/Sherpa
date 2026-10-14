@@ -631,6 +631,11 @@ pub struct ExtendInfo {
     pub brightness: [u8; 10],
 }
 
+/// Brightness level of a stored byte: `0x80 | level`, or `None` when not set.
+fn level_of(b: u8) -> Option<u8> {
+    (b & 0x80 != 0).then_some(b & 0x7F)
+}
+
 /// Quantise a brightness to {0, 25, 50, 75, 100}.
 pub fn quantize_brightness(v: u8) -> u8 {
     let v = v.min(100) as u16;
@@ -640,10 +645,12 @@ pub fn quantize_brightness(v: u8) -> u8 {
 impl ExtendInfo {
     /// Build the value to write from dock settings.
     pub fn from_dock(d: &DockSettings) -> ExtendInfo {
+        // `0x80 | level` sets a level; `00` is "not set", the keyboard default (fw 0x57).
+        let level = |v: Option<u8>| v.map_or(0, |v| 0x80 | quantize_brightness(v));
         let mut brightness = [0u8; 10];
         for i in 0..5 {
-            brightness[2 * i] = 0x80 | quantize_brightness(d.dock_brightness[i]);
-            brightness[2 * i + 1] = 0x80 | quantize_brightness(d.numpad_brightness[i]);
+            brightness[2 * i] = level(d.dock_brightness[i]);
+            brightness[2 * i + 1] = level(d.numpad_brightness[i]);
         }
         // TODO(spec): the bit positions of the screen-saver type in `screenSetup` are unknown;
         // only the two enable bits are written.
@@ -691,15 +698,42 @@ impl ExtendInfo {
         b[16] = self.numpad_plug;
         b[17] = self.pixel_shift_time;
         b[18] = self.dock_double_click;
-        // Raw: `0x80 | level` sets a level, a byte without `0x80` keeps the current one
+        // Raw, as read back: `0x80 | level` is a set level, `00` not set (keyboard default)
         // (hardware, fw 0x57). `from_dock` adds the flag.
         b[19..29].copy_from_slice(&self.brightness);
         b
     }
 
+    /// Dock settings from a read. A brightness byte without `0x80` is "not set" (`None`).
+    /// The screen-saver type bits are unknown, so `screen_saver_type` is kept.
+    pub fn to_dock(&self, clock: (bool, bool), keep: &DockSettings) -> DockSettings {
+        DockSettings {
+            pages_enabled: self.show_menu,
+            clock_digital: clock.0,
+            clock12h: clock.1,
+            menu_color: Rgb(self.menu_color[0], self.menu_color[1], self.menu_color[2]),
+            screen_saver_enabled: self.screen_setup & 1 != 0,
+            turn_off_enabled: self.screen_setup & 2 != 0,
+            screen_saver_type: keep.screen_saver_type,
+            screen_saver_sec: self.screen_saver,
+            turn_off_sec: self.turn_off,
+            profiles_shown: self.show_profile.map(|v| v & 0x0F),
+            dock_brightness: std::array::from_fn(|i| level_of(self.brightness[2 * i])),
+            numpad_brightness: std::array::from_fn(|i| level_of(self.brightness[2 * i + 1])),
+            pixel_shift_time: self.pixel_shift_time,
+            double_click_ms: self.dock_double_click,
+        }
+    }
+
+    /// Keep what the dock settings do not describe from a device read: the disabled
+    /// profile flags and the unknown bits of `screenSetup`.
+    pub fn keep_device_bits(&mut self, device: &ExtendInfo) {
+        self.keep_profile_flags(device);
+        self.screen_setup = (device.screen_setup & !0x03) | (self.screen_setup & 0x03);
+    }
+
     /// The value to write back after a read: same settings, with the write rules of §6.4
-    /// (dockPlug 2, menuIndex 0, numpadPlug 2). Brightness bytes read back as 0, i.e.
-    /// without `0x80`, so the device keeps its levels.
+    /// (dockPlug 2, menuIndex 0, numpadPlug 2). Brightness bytes are written back as read.
     pub fn rewrite(&self) -> ExtendInfo {
         ExtendInfo { dock_plug: 2, menu_index: 0, numpad_plug: 2, ..self.clone() }
     }
@@ -1119,8 +1153,8 @@ mod tests {
             profiles_shown: [1, 2, 3, 4, 5],
             pixel_shift_time: 0,
             double_click_ms: 50,
-            dock_brightness: [100; 5],
-            numpad_brightness: [50; 5],
+            dock_brightness: [Some(100); 5],
+            numpad_brightness: [Some(50); 5],
             ..Default::default()
         };
         let p = ext_info_write(Variant::EverestMax, &ExtendInfo::from_dock(&d)).unwrap();
@@ -1156,6 +1190,26 @@ mod tests {
         let mut d = ExtendInfo::from_dock(&DockSettings::default());
         d.keep_profile_flags(&read);
         assert_eq!(d.show_profile, [0x01, 0x12, 0x13, 0x14, 0x15]);
+    }
+
+    #[test]
+    fn dock_import_and_write_back_keep_what_is_unknown() {
+        let read = ExtendInfo::from_bytes(&unhex("01 a9 41 dc 29 bc 70 1e 00 1e 00 01 12 13 14 15 01 00 32 00 00 00 00 00 00 00 00 00 00"));
+        let dock = read.to_dock((true, false), &DockSettings::default());
+        assert_eq!((dock.pages_enabled, dock.menu_color, dock.screen_saver_sec, dock.turn_off_sec), (0xa9, Rgb(0xdc, 0x29, 0xbc), 30, 30));
+        assert_eq!(dock.profiles_shown, [1, 2, 3, 4, 5]);
+        assert!(dock.dock_brightness.iter().chain(&dock.numpad_brightness).all(Option::is_none), "not set");
+        // Writing the imported settings back changes nothing.
+        let mut e = ExtendInfo::from_dock(&dock);
+        e.keep_device_bits(&read);
+        assert_eq!(e.to_bytes(), read.rewrite().to_bytes());
+        // Set levels round-trip; others stay "not set".
+        let mut dock = dock;
+        dock.numpad_brightness[0] = Some(60);
+        let e = ExtendInfo::from_dock(&dock);
+        assert_eq!(&e.brightness[..2], &[0x00, 0x80 | 50]);
+        let back = e.to_dock((true, false), &dock);
+        assert_eq!((back.dock_brightness[0], back.numpad_brightness[0]), (None, Some(50)));
     }
 
     #[test]

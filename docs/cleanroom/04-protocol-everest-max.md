@@ -259,21 +259,21 @@ ExtendInfo is **29 packed bytes**:
 | 1 | showMenu | page-enable bitmask ([03](03-data-model.md) DockSettings) |
 | 2 | menuIndex | read: page the dock currently shows (§6.5). Write: 0 |
 | 3–5 | menuColor | R, G, B |
-| 6 | screenSetup | bit0 screen saver on, bit1 auto turn-off on; type bits [U] |
+| 6 | screenSetup | bit0 screen saver on, bit1 auto turn-off on; type bits [U]. [H] A keyboard set up with Base Camp read `0x70`: keep bits 2–7 from a read when writing |
 | 7–8 | screenSaver u16 | ≤ 1800 |
 | 9–10 | turnOff u16 | ≤ 1800 |
 | 11–15 | showProfile[5] | each non-zero, with a distinct low nibble, or the library rejects the whole write. Low nibble = profile number; bit `0x10` = profile **disabled** [H] (see below) |
 | 16 | numpadPlug | read: bit0 right, bit1 left. Write: 2 |
 | 17 | pixelShiftTime | |
 | 18 | dockDoubleClick | ≤ 200; Base Camp writes 50 |
-| 19–28 | brightness[5] × {dock, numpad} | `0x80 \| level`, level ∈ {0, 25, 50, 75, 100}; the library quantises other values to the nearest level. Reads back as `00`; a written byte without `0x80` keeps the current level [H] |
+| 19–28 | brightness[5] × {dock, numpad} | `0x80 \| level`, level ∈ {0, 25, 50, 75, 100}; the library quantises other values to the nearest level. [H] Reads back what was written; `00` = not set (keyboard default), as on a keyboard set up with Base Camp. Writing `0x80 \| 25` for profile 1's dock was stored but changed nothing visible, immediately, after a profile reload or after a power cycle |
 
 Validation is done host-side by the library [P]. Do it in your code too.
 
 **Observed on hardware [H]:**
 - **Read-modify-write is safe:** rewriting the block as read, with the write rules applied
-  (dockPlug 2, menuIndex 0, numpadPlug 2) and the brightness bytes left at `00`, changes
-  nothing visible. Writing menuIndex 0 does not change the page the dock shows.
+  (dockPlug 2, menuIndex 0, numpadPlug 2), changes nothing. Writing menuIndex 0 does not
+  change the page the dock shows.
 - **Disabled profiles:** a keyboard set up with one profile reads `showProfile = 01 12 13 14 15`,
   so profiles 2–5 carry `0x10`. Clearing `0x10` enables the profile: switching to it then
   loads its lighting. Setting it disables the profile again. See §8 for what a disabled

@@ -293,8 +293,6 @@ impl EverestSim {
             (0x11, 0x12, _, _) => r[4] = 0,
             (0x11, 0x14, 0x00, 0x00) => {
                 r[4..33].copy_from_slice(&self.ext.to_bytes());
-                // Brightness always reads back as 0 (fw 0x57).
-                r[23..33].fill(0);
             }
             (0x11, 0x14, 0x00, 0x01) => {
                 if self.variant == Variant::EverestMax {
@@ -302,12 +300,6 @@ impl EverestSim {
                     e.dock_plug = self.ext.dock_plug;
                     e.numpad_plug = self.ext.numpad_plug;
                     e.menu_index = self.ext.menu_index;
-                    // A byte without 0x80 keeps the current level.
-                    for (new, old) in e.brightness.iter_mut().zip(self.ext.brightness) {
-                        if *new & 0x80 == 0 {
-                            *new = old;
-                        }
-                    }
                     self.ext = e;
                 }
             }

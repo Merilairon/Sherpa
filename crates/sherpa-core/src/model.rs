@@ -283,8 +283,9 @@ pub struct DockSettings {
     pub screen_saver_sec: u16,
     pub turn_off_sec: u16,
     pub profiles_shown: [u8; 5],
-    pub dock_brightness: [u8; 5],
-    pub numpad_brightness: [u8; 5],
+    /// Per profile; `None` keeps the keyboard's level, which cannot be read back.
+    pub dock_brightness: [Option<u8>; 5],
+    pub numpad_brightness: [Option<u8>; 5],
     pub pixel_shift_time: u8,
     pub double_click_ms: u8,
 }
@@ -302,8 +303,8 @@ impl Default for DockSettings {
             screen_saver_sec: 300,
             turn_off_sec: 1800,
             profiles_shown: [1, 2, 3, 4, 5],
-            dock_brightness: [100; 5],
-            numpad_brightness: [100; 5],
+            dock_brightness: [None; 5],
+            numpad_brightness: [None; 5],
             pixel_shift_time: 0,
             double_click_ms: 50,
         }

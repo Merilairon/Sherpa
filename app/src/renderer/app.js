@@ -902,7 +902,7 @@ function renderDock() {
   const D = S.dockDraft;
   const set = (k) => (v) => { D[k] = v; };
   const ssTypes = (S.catalog && S.catalog.screenSaverTypes) || [];
-  const levels = [0, 25, 50, 75, 100];
+  const brightness = [['', 'Default'], ...[0, 25, 50, 75, 100].map((l) => [l, `${l}%`])];
   return h('div', { class: 'col' },
     h('div', { class: 'card col' },
       h('h2', {}, 'Menu pages'),
@@ -926,8 +926,9 @@ function renderDock() {
       h('div', { class: 'grid5' }, [0, 1, 2, 3, 4].map((i) => h('div', { class: 'col', style: { gap: '6px' } },
         h('strong', {}, `Profile ${i + 1}`),
         field('Shown as', select([1, 2, 3, 4, 5].map((n) => [n, `Profile ${n}`]), D.profilesShown[i], (v) => { D.profilesShown[i] = Number(v); })),
-        field('Dock', select(levels.map((l) => [l, `${l}%`]), D.dockBrightness[i], (v) => { D.dockBrightness[i] = Number(v); })),
-        field('Numpad', select(levels.map((l) => [l, `${l}%`]), D.numpadBrightness[i], (v) => { D.numpadBrightness[i] = Number(v); })))))),
+        field('Dock', select(brightness, D.dockBrightness[i] ?? '', (v) => { D.dockBrightness[i] = v === '' ? null : Number(v); })),
+        field('Numpad', select(brightness, D.numpadBrightness[i] ?? '', (v) => { D.numpadBrightness[i] = v === '' ? null : Number(v); }))))),
+      h('p', { class: 'hint' }, '"Default" leaves the level unset. On firmware 0x57, setting a level was stored but made no visible difference in testing.')),
     h('div', { class: 'row' },
       h('button', { class: 'primary', onclick: async () => {
         await call('SetDock', { dev: S.devId, dock: D }, { okMsg: 'Media dock settings saved' }).catch(() => {});
