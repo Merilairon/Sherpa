@@ -1,0 +1,11 @@
+# systemd user unit: re-applies your profile whenever the keyboard is plugged in.
+# Install: cp basecamp-linux.service ~/.config/systemd/user/ && systemctl --user enable --now basecamp-linux
+[Unit]
+Description=Mountain Everest Max profile applier
+
+[Service]
+ExecStart=%h/.local/bin/basecamp-linux watch %h/.config/basecamp-linux/profile.json
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

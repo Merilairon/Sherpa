@@ -1,0 +1,9 @@
+{
+  "lighting": {
+    "brightness": 80,
+    "default": "101010",
+    "per_key": { "Esc": "ff0000", "W": "00a0ff", "A": "00a0ff", "S": "00a0ff", "D": "00a0ff" },
+    "save": false
+  },
+  "macros": { "F12": "macros/hello.json" }
+}

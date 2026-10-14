@@ -1,0 +1,9 @@
+{
+  "playback": "play-one",
+  "events": [
+    { "type": "keydown", "key": "H", "delay": 20 },
+    { "type": "keyup",   "key": "H", "delay": 20 },
+    { "type": "keydown", "key": "I", "delay": 20 },
+    { "type": "keyup",   "key": "I", "delay": 0 }
+  ]
+}

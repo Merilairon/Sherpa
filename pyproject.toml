@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "basecamp-linux"
+version = "0.1.0"
+description = "Configure Mountain Everest Max lighting and macros on Linux via hidraw"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[project.scripts]
+basecamp-linux = "basecamp_linux.cli:main"
+
+[tool.setuptools]
+packages = ["basecamp_linux"]
+
+[tool.setuptools.package-data]
+basecamp_linux = ["data/*.csv"]
