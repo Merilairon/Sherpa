@@ -1,0 +1,15 @@
+[package]
+name = "sherpa-hid"
+description = "HID transport for Mountain peripherals: Linux hidraw and Windows HID"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+log.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
