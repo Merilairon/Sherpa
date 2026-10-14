@@ -19,6 +19,9 @@
 
 ## 2. Request/response engine [P]
 
+[H] After plug-in, the keyboard does not answer for a few seconds. A first `11 00` timed
+out 1–4 s after the device appeared. Retry the first command on attach.
+
 1. Hold a per-device lock for the whole command, including every chunk.
 2. Send the request.
 3. Wait for an input report whose **bytes 0–3 equal the request's bytes 0–3**: that is the
@@ -175,14 +178,21 @@ getters keep their old values.
 
 | Request | Reply |
 |---|---|
-| `11 01 00 00 02` | multi-part form A: effect menu table: profile count, effect count, then 5 × {9 menu bytes, current index} |
-| `11 01 00 01 <profile> <menu>` | single reply carrying the EffectData (62 bytes) of that slot; start offset [U] |
-| `11 01 00 02 <profile> 02` | multi-part form B: per-key static colours (126 RGB) |
+| `11 01 00 00 02` | multi-part form A: effect menu table: profile count, effect count, then 5 × {9 menu bytes, current index}. [H] b4 = 6 and b5 = 9; the data is 6 × 9 effect indices (firmware profiles 0..5, see §8 for profile 0), followed by the 6 current menu slots |
+| `11 01 00 01 <profile> <menu>` | single reply carrying the EffectData (62 bytes) of that slot; start offset [U]. [H] The data starts at b6, in the layout sent in §5.1/§5.3 from b2 |
+| `11 01 00 02 <profile> 02` | multi-part form B: per-key static colours (126 RGB). [H] The first 378 bytes of the reassembled data |
 | `11 01 00 02 <profile> <menu> 02` | multi-part form B: per-key custom effect content [U] |
-| `11 01 00 03 <profile> 02` | multi-part form B: per-LED effect table (126 bytes) |
+| `11 01 00 03 <profile> 02` | multi-part form B: per-LED effect table (126 bytes). [H] The first 126 bytes; the padding after them is stored as written |
 | `11 01 00 04 <profile> <effect>` | single reply carrying EffectData for an effect value; start offset [U] |
 | `11 01 00 05 <profile> 02` | multi-part form B: light-bar data [U]. If b4 is `0A` or `FF`, `remaining` is at b5 and the payload starts at b6 instead. |
 
+[H] **A menu slot can hold another effect than its usual one.** A keyboard set up with Base
+Camp had Custom in menus 1, 2, 3 and 6 of profile 1, with menu 3 current. So:
+- switch profiles with the raw current menu slot from the menu table, or the lighting
+  changes;
+- treat a slot as an entry of its usual effect only when it holds that effect.
+
+Both a profile switch and a Save set the profile's current menu slot.
 ### 5.8 Per-key custom effect: `ChangeCustomizeEffect` [P]
 This command sets animated per-key effects in Custom mode (the static case is §5.5). The
 input is a list of up to 171 entries `{led, r, g, b}`, sent 14 entries per chunk.

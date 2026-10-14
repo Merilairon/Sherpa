@@ -459,6 +459,99 @@ pub fn effect_table_request(profile: u8) -> (Packet, Form) {
     (packet(&[0x11, 0x01, 0x00, 0x03, profile, 0x02]), Form::B)
 }
 
+/// Firmware profiles in the effect menu table: 0 (hidden, reached with slot 6) and 1..5.
+pub const MENU_TABLE_PROFILES: usize = 6;
+
+/// The effect menu table (`11 01 00 00 02`) as read on hardware (fw 0x57): for profiles
+/// 0..5 the effect index stored in each of the 9 menu slots, then each profile's current
+/// menu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuTable {
+    pub effects: Vec<[u8; 9]>,
+    pub current: Vec<u8>,
+}
+
+impl MenuTable {
+    pub fn parse(data: &[u8]) -> Option<MenuTable> {
+        let n = MENU_TABLE_PROFILES;
+        if data.len() < n * 10 {
+            return None;
+        }
+        let effects = (0..n).map(|p| data[9 * p..9 * p + 9].try_into().unwrap()).collect();
+        Some(MenuTable { effects, current: data[9 * n..10 * n].to_vec() })
+    }
+
+    /// Current menu slot of firmware profile `slot`, if valid.
+    pub fn current_menu(&self, slot: u8) -> Option<u8> {
+        self.current.get(slot as usize).copied().filter(|&m| m < 9)
+    }
+
+    /// Effect stored in `menu` of profile `slot`.
+    pub fn effect(&self, slot: u8, menu: u8) -> Option<u8> {
+        self.effects.get(slot as usize).and_then(|e| e.get(menu as usize)).copied()
+    }
+}
+
+/// UI speed for a device speed: the middle of its §5.2 bucket (nearest bucket when the
+/// value is not in the table).
+pub fn unmap_speed(effect_index: u8, dev: u8) -> u8 {
+    const UI: [u8; 5] = [0, 25, 50, 75, 100];
+    if map_speed(effect_index, 0) == 0 && map_speed(effect_index, 100) == 100 {
+        return dev.min(100);
+    }
+    let table: Vec<u8> = UI.iter().map(|&u| map_speed(effect_index, u)).collect();
+    let b = (0..5).min_by_key(|&i| (table[i] as i16 - dev as i16).abs()).unwrap();
+    UI[b]
+}
+
+/// Lighting entry from a stored menu slot: `data` is the `11 01 00 01 <p> <m>` reply from
+/// b6, laid out like the bytes sent in §5.1/§5.3. `None` when the slot is empty (`FF`) or
+/// holds another effect than `menu`'s.
+pub fn lighting_from_slot(menu: MenuIndex, data: &[u8]) -> Option<Lighting> {
+    let e = *data.first()?;
+    if e != menu.effect_index() || data.len() < 39 {
+        return None;
+    }
+    let rgb = |i: usize| Rgb(data[i], data[i + 1], data[i + 2]);
+    let mut l = Lighting::new(menu);
+    l.brightness = data[3].min(100);
+    l.speed = unmap_speed(e, data[2]);
+    match e {
+        effect::COLOR_WAVE | effect::TORNADO => {
+            let stops = data[7];
+            l.color1 = rgb(9);
+            l.color_type = match data[4] {
+                2 => ColorType::Random,
+                _ if e == effect::COLOR_WAVE && stops >= 4 => ColorType::Dual,
+                _ => ColorType::Single,
+            };
+            if l.color_type == ColorType::Dual {
+                l.color2 = rgb(13);
+            }
+            let valid = if e == effect::COLOR_WAVE { [0, 2, 4, 6].contains(&data[5]) } else { [9, 10].contains(&data[5]) };
+            if valid {
+                l.direction = data[5];
+            }
+            l.color3 = rgb(36);
+        }
+        _ => {
+            l.color_type = match data[4] {
+                16 => ColorType::Dual,
+                2 => ColorType::Random,
+                _ => ColorType::Single,
+            };
+            l.color1 = rgb(7);
+            if l.color_type == ColorType::Dual {
+                l.color2 = rgb(10);
+            }
+            if has_background(e) {
+                l.color3 = rgb(16);
+            }
+        }
+    }
+    Some(l)
+}
+
 // ---------------------------------------------------------------------------------------
 // Device settings (§6)
 
@@ -917,6 +1010,74 @@ mod tests {
                 assert_ne!(&p[..4], &[0x14, 0x2C, 0x00, 0x01], "{m:?} {ct:?}: per-key header");
             }
         }
+    }
+
+    #[test]
+    fn stored_slots_decode_back_to_lighting() {
+        // What the firmware stores is the sent payload from b2 (minus normalisation, which
+        // only touches fields the decoder ignores).
+        for m in MenuIndex::ALL.into_iter().filter(|&m| m != MenuIndex::Custom) {
+            for ct in [ColorType::Single, ColorType::Dual, ColorType::Random] {
+                let mut l = Lighting::new(m);
+                l.color_type = ct;
+                l.speed = 75;
+                l.brightness = 60;
+                l.color1 = Rgb(1, 2, 3);
+                l.color2 = Rgb(4, 5, 6);
+                l.color3 = Rgb(7, 8, 9);
+                l.direction = if m == MenuIndex::Tornado {
+                    10
+                } else if m == MenuIndex::ColorWave {
+                    4
+                } else {
+                    0
+                };
+                let p = lighting_packet(&l).unwrap();
+                let back = lighting_from_slot(m, &p[2..]).unwrap();
+                let block = matches!(m, MenuIndex::ColorWave | MenuIndex::Tornado);
+                let want_ct = match (block, p[6]) {
+                    (_, 2) => ColorType::Random,
+                    (true, _) if m == MenuIndex::ColorWave && ct == ColorType::Dual => ColorType::Dual,
+                    (false, 16) => ColorType::Dual,
+                    _ => ColorType::Single,
+                };
+                assert_eq!(back.color_type, want_ct, "{m:?} {ct:?}");
+                assert_eq!(back.brightness, 60, "{m:?}");
+                if ![MenuIndex::Static, MenuIndex::Off].contains(&m) {
+                    assert_eq!(back.speed, 75, "{m:?}");
+                }
+                if m != MenuIndex::Off && want_ct != ColorType::Random {
+                    assert_eq!(back.color1, Rgb(1, 2, 3), "{m:?} {ct:?}");
+                }
+                if want_ct == ColorType::Dual {
+                    assert_eq!(back.color2, Rgb(4, 5, 6), "{m:?} {ct:?}");
+                }
+                assert_eq!(back.direction, l.direction, "{m:?}");
+            }
+        }
+        // Empty slot, and a slot holding another effect than its menu's.
+        assert!(lighting_from_slot(MenuIndex::Static, &[0xFF; 58]).is_none());
+        assert!(lighting_from_slot(
+            MenuIndex::Breathing,
+            &unhex("0a 00 ff 4b 00 ff ff 00 44 ff 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00")
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn menu_table_as_read_from_hardware() {
+        let data = unhex(
+            "04 0c 0c 0c 0c 0c 0c 0c 0c 00 0a 0a 0a 03 09 0a 06 0c 00 04 07 01 03 09 0a 06 0c 00 04 07 01 03 09 0a 06 0c \
+             00 04 07 01 03 09 0a 06 0c 00 04 07 01 03 09 0a 06 0c 00 03 01 01 01 01 ff ff",
+        );
+        let t = MenuTable::parse(&data).unwrap();
+        assert_eq!(t.current_menu(1), Some(3));
+        assert_eq!(t.current_menu(2), Some(1));
+        assert_eq!(t.effect(1, 3), Some(effect::CUSTOM), "profile 1 keeps Custom in menu 3");
+        assert_eq!(t.effect(2, 1), Some(effect::COLOR_WAVE));
+        assert_eq!(unmap_speed(effect::BREATHING, 3), 50);
+        assert_eq!(unmap_speed(effect::BREATHING, 2), 50, "nearest bucket");
+        assert_eq!(unmap_speed(effect::STATIC, 0xFF), 100);
     }
 
     #[test]
