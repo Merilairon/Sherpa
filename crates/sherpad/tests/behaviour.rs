@@ -351,8 +351,11 @@ fn b11_other_uid_refused() {
 fn r9_url_from_key_content() {
     let (rig, hid, _) = max_rig(timing());
     rig.d.set_binding(DEV, 1, binding(9, BindingType::Url, "http://a")).unwrap();
-    // The binding was stored on the keyboard as launch content (G16 form).
-    assert!(hid.writes().iter().any(|p| starts(p, &[0x17, 0x70, 0x09, 0x00, 0x02])));
+    // The key is reset first, then stored on the keyboard as launch content (G16 form).
+    let w = hid.writes();
+    let reset = w.iter().position(|p| starts(p, &[0x14, 0x20, 0x70, 0x00, 0xff, 0x00])).expect("key reset");
+    let launch = w.iter().position(|p| starts(p, &[0x17, 0x70, 0x09, 0x00, 0x02])).expect("launch content");
+    assert!(reset < launch);
     rig.d.call("SimulateKey", &serde_json::json!({"dev": DEV, "led": 9})).unwrap();
     assert!(wait_until(1000, || !rig.x.calls.lock().unwrap().is_empty()));
     assert_eq!(rig.x.take(), vec!["url http://a"]);

@@ -289,6 +289,8 @@ impl EverestSim {
             .enumerate()
             .map(|(i, s)| {
                 let mut r = packet(&[0x11, 0x02, 0x00, 0x01, (n - 1 - i) as u8]);
+                // The firmware pads after the content with FF (fw 0x57).
+                r[5..].fill(0xFF);
                 r[5..5 + s.len()].copy_from_slice(s);
                 r.to_vec()
             })

@@ -294,7 +294,14 @@ shows. Uploading pictures is out of scope.
   - key: fwKey for keyboard; mouse buttons 1/2/3; wheel 48 = down, 49 = up.
 - The last event must be the terminator `FF FF 00 00`. At most 1000 events including it.
 - `playback`: 1 once, 4 hold, 3 repeat.
-- The macro is stored against `src` in the active profile [I].
+- The macro is stored against `src` in the active profile [I]. Confirmed: it plays from
+  the keyboard itself [H].
+- [H] **Reset the key first** with `14 20 <src> FF 00` before writing a macro or launch
+  content (§7.5). An earlier remap stays in effect underneath them: the key keeps sending
+  the remap target, and the key-state report (§10) names the target, so the host cannot
+  find the key. A remap written over content replaces it.
+- [H] Bindings need **no Save**: remaps, macros and launch content survive a profile
+  switch and a power cycle.
 
 ### 7.5 Launch content write: chunks of `17 <src fwKey> <len b2> <seq b3> <data[len] @4>` [P]
 - Data is `<LaunchKind byte> ‖ UTF-8 text`; arguments inside the text are separated by `~`.
@@ -303,6 +310,8 @@ shows. Uploading pictures is out of scope.
   gets 1, and every later chunk gets 3 if `total < offset + 60`, else 2. So a payload whose
   length is an exact multiple of 60 (≥ 120) ends with a 2, not a 3. Reproduce this exactly.
 - Base Camp waits about 1 ms between chunks.
+- [H] A key with launch content sends nothing to the OS when pressed; the host acts on
+  release (05 §2.2). Reset the key before writing (§7.4).
 
 ### 7.6 Key content read: `11 02 00 01 <profile> <key> <interval>`; timeout 1000 ms [P]
 - The multi-part reply (§9, form B) reassembles into
@@ -311,8 +320,18 @@ shows. Uploading pictures is out of scope.
   strip zero bytes, then read the leading kind byte.
 - A NAK `FF AA FF 00` means the key has no content.
 - Base Camp passes the **LED index** of the released key as `<key>` and uses `interval = 2`
-  [P]. Whether the firmware expects an LED index or a fwKey here is **[U]**. Try the LED
-  index first, as Base Camp does.
+  [P]. The firmware does expect the LED index [H].
+- [H] The data is `size` bytes long and the reply is **padded with `FF`** after it. Cut the
+  data at `size`: stripping zero bytes alone leaves the padding in the text. Observed
+  records:
+
+  | Binding | Reply |
+  |---|---|
+  | remap | `size` 1, keyType 1, idx1 = target code (e.g. `E6` = F13) |
+  | macro | keyType 5, events in the §7.4 form |
+  | launch | keyType 7, idx1 = src fwKey, idx2 `FF`, data = kind ‖ text |
+  | reset to default after having content | `size` 0, keyType `FF` |
+  | never written | NAK |
 
 ## 8. Profiles and persistence [P]
 | Request | Meaning | Timeout |
@@ -349,7 +368,7 @@ accepted. It maps to profile 0 of the lighting getters (§5.7) and holds Off in 
 ## 10. Unsolicited input reports [P]
 | b0 | Meaning |
 |---|---|
-| `01` | Key-state bitmap. Bit *u* (byte `1 + u/8`, bit `u % 8`, counted from b0) is set while the key with HID usage *u* is down. Map usages to keys with `everest_max_layout.csv` (column `hid_usage` → `index`). See [05](05-host-actions.md). |
+| `01` | Key-state bitmap. Bit *u* (byte `1 + u/8`, bit `u % 8`, counted from b0) is set while the key with HID usage *u* is down. Map usages to keys with `everest_max_layout.csv` (column `hid_usage` → `index`). See [05](05-host-actions.md). [H] Confirmed: Scroll Lock (71) is byte 9 bit 7. The bit is that of the usage the key *sends*, so a remapped key shows its target. Some bits are set in every report (bytes 5, 9 and 18 on the test keyboard): act on changes only. |
 | `02`..`0A` | 9 chunks (63 bytes each) of the live LED colour frame. Used only for sync features. |
 
 Some layout entries have usages above 503 (for example Profile 1..5 = 773..777). Those don't

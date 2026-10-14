@@ -42,8 +42,9 @@ keys.
 4. If `keyType ≠ 7` (not launch content), stop: the keyboard handled it.
 5. If the key is a media key (index 26 Play/Pause, 35 Mute, 53 Previous, 62 Next), act only
    while the dock's menu index (`11 14` reply, offset 2) is `130`. Otherwise stop.
-6. Decode the payload: drop zero bytes, then `kind = data[0]` and `text = UTF-8(data[1:])`
-   trimmed. Run the action in §3.
+6. Decode the payload: take the first `size` bytes (the reply is padded with `FF` [H], see
+   04 §7.6), drop zero bytes, then `kind = data[0]` and `text = UTF-8(data[1:])` trimmed.
+   Run the action in §3.
 
 ## 3. Actions by launch kind
 

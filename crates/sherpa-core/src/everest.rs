@@ -812,11 +812,15 @@ pub struct KeyContent {
 
 pub const KEY_TYPE_LAUNCH: u8 = 7;
 
+/// Parse a reassembled key-content reply. The data is `size` bytes long; the reply is
+/// padded with `FF` after it (hardware, fw 0x57), so it is cut at `size`.
 pub fn parse_key_content(b: &[u8]) -> Option<KeyContent> {
     if b.len() < 5 {
         return None;
     }
-    Some(KeyContent { size: u16::from_le_bytes([b[0], b[1]]), key_type: b[2], idx1: b[3], idx2: b[4], data: b[5..].to_vec() })
+    let size = u16::from_le_bytes([b[0], b[1]]);
+    let end = (5 + size as usize).min(b.len());
+    Some(KeyContent { size, key_type: b[2], idx1: b[3], idx2: b[4], data: b[5..end].to_vec() })
 }
 
 // ---------------------------------------------------------------------------------------
@@ -913,6 +917,19 @@ mod tests {
                 assert_ne!(&p[..4], &[0x14, 0x2C, 0x00, 0x01], "{m:?} {ct:?}: per-key header");
             }
         }
+    }
+
+    #[test]
+    fn key_content_is_cut_at_size() {
+        // Launch content as read back from the keyboard (fw 0x57): FF padding follows.
+        let mut b = unhex("14 00 07 7d ff 02 68 74 74 70 73 3a 2f 2f 65 78 61 6d 70 6c 65 2e 63 6f 6d");
+        b.extend([0xFF; 30]);
+        let c = parse_key_content(&b).unwrap();
+        assert_eq!((c.size, c.key_type, c.idx1), (20, KEY_TYPE_LAUNCH, 0x7d));
+        assert_eq!(crate::launch::decode(&c.data).unwrap().text, "https://example.com");
+        // A key reset after having content: size 0, type FF.
+        let c = parse_key_content(&unhex("00 00 ff 00 ff ff ff")).unwrap();
+        assert!(c.data.is_empty() && c.key_type == 0xFF);
     }
 
     #[test]
