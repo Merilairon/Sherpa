@@ -152,6 +152,24 @@ impl HidIo for FakeHid {
 /// Predicate over a written payload.
 pub type PacketFilter = Box<dyn Fn(&[u8]) -> bool + Send>;
 
+/// Split `data` into multi-part replies (§9): `header`, the `remaining` countdown at
+/// `rem_at`, then `slice`-byte parts, padded with `pad`.
+fn parts(header: &[u8], rem_at: usize, data: &[u8], slice: usize, pad: u8) -> Vec<Vec<u8>> {
+    let chunks: Vec<&[u8]> = data.chunks(slice).collect();
+    let n = chunks.len();
+    chunks
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let mut r = packet(header);
+            r[rem_at] = (n - 1 - i) as u8;
+            r[rem_at + 1..].fill(pad);
+            r[rem_at + 1..rem_at + 1 + c.len()].copy_from_slice(c);
+            r.to_vec()
+        })
+        .collect()
+}
+
 /// Mutable state of a simulated Everest-family device.
 pub struct EverestSim {
     pub variant: Variant,
@@ -165,6 +183,15 @@ pub struct EverestSim {
     pub toggles: HashMap<u8, u8>,
     /// Launch content per (profile, fwKey).
     pub launch: HashMap<(u8, u8), Vec<u8>>,
+    /// Saved effect data per (profile, menu slot), §5.1 layout from b2 (58 bytes).
+    pub slots: HashMap<(u8, u8), Vec<u8>>,
+    /// Current menu slot of firmware profiles 0..5.
+    pub menus: [u8; 6],
+    /// Saved per-key colours (3 × LEDs) and per-LED effects per profile.
+    pub per_key: HashMap<u8, Vec<u8>>,
+    pub led_effects: HashMap<u8, Vec<u8>>,
+    /// Sent but not yet saved: effect data, per-key colours, per-LED effects.
+    pending: (Vec<u8>, Vec<u8>, Vec<u8>),
     /// Reject packets whose payload this predicate matches.
     pub nak_if: Option<PacketFilter>,
     /// Drop packets whose payload this predicate matches (no reply → timeout).
@@ -186,8 +213,42 @@ impl EverestSim {
             clock_12h: false,
             toggles: HashMap::new(),
             launch: HashMap::new(),
+            slots: HashMap::new(),
+            menus: [0; 6],
+            per_key: HashMap::new(),
+            led_effects: HashMap::new(),
+            pending: (Vec::new(), vec![0xFF; 3 * variant.led_count()], vec![0; variant.led_count()]),
             nak_if: None,
             ignore_if: None,
+        }
+    }
+
+    /// Effect stored in a menu slot (the usual one when never saved).
+    fn slot_effect(&self, profile: u8, menu: u8) -> u8 {
+        const USUAL: [u8; 9] = [0, 4, 7, 1, 3, 9, 10, 6, 12];
+        self.slots.get(&(profile, menu)).map(|d| d[0]).unwrap_or(USUAL[menu as usize % 9])
+    }
+
+    /// Lighting getters (§5.7), in the layouts read from hardware (fw 0x57).
+    fn lighting_getter(&self, p: &Packet) -> Vec<Vec<u8>> {
+        let n = self.variant.led_count();
+        match p[3] {
+            0x00 => {
+                let mut data: Vec<u8> =
+                    (0..6u8).flat_map(|pr| (0..9u8).map(move |m| (pr, m))).map(|(pr, m)| self.slot_effect(pr, m)).collect();
+                data.extend_from_slice(&self.menus);
+                parts(&[0x11, 0x01, 0x00, 0x00, 0x06, 0x09], 6, &data, 57, 0xFF)
+            }
+            0x01 => {
+                let mut r = packet(&p[..6]);
+                match self.slots.get(&(p[4], p[5])) {
+                    Some(d) => r[6..64].copy_from_slice(d),
+                    None => r[6] = self.slot_effect(p[4], p[5]),
+                }
+                vec![r.to_vec()]
+            }
+            0x02 => parts(&[0x11, 0x01, 0x00, 0x02], 4, self.per_key.get(&p[4]).unwrap_or(&vec![0xFF; 3 * n]), 59, 0xFF),
+            _ => parts(&[0x11, 0x01, 0x00, 0x03], 4, self.led_effects.get(&p[4]).unwrap_or(&vec![0; n]), 59, 0xFF),
         }
     }
 
@@ -251,12 +312,42 @@ impl EverestSim {
             (0x14, 0x00, _, _) => {
                 self.profile = p[4];
                 self.menu = p[5];
+                if let Some(m) = self.menus.get_mut(p[4] as usize % 6) {
+                    *m = p[5];
+                }
             }
             // Like the firmware (fw 0x57): effects apply with applyAll 0, an in-range per-key
-            // chunk switches to Custom, and effects with applyAll 1 are ignored.
-            (0x14, 0x2C, e, 0x00) => self.effect = e,
-            (0x14, 0x2C, 0x00, 0x01) => self.effect = effect::CUSTOM,
-            (0x13, 0x55, _, _) => self.menu = p[4],
+            // chunk switches to Custom, and effects with applyAll 1 are ignored. Save stores
+            // the effect into the menu slot (and the per-key tables when in Custom).
+            (0x14, 0x2C, e, 0x00) => {
+                self.effect = e;
+                self.pending.0 = p[2..60].to_vec();
+            }
+            (0x14, 0x2C, 0x00, 0x01) => {
+                self.effect = effect::CUSTOM;
+                let at = 57 * p[4] as usize;
+                let end = (at + 57).min(self.pending.1.len());
+                self.pending.1[at..end].copy_from_slice(&p[7..7 + end - at]);
+            }
+            (0x14, 0xA0, i, 0x01) => {
+                let at = 60 * i as usize;
+                let end = (at + 60).min(self.pending.2.len());
+                if at < end {
+                    self.pending.2[at..end].copy_from_slice(&p[4..4 + end - at]);
+                }
+            }
+            (0x11, 0x01, 0x00, 0x00..=0x03) => return self.lighting_getter(p),
+            (0x13, 0x55, _, _) => {
+                self.menu = p[4];
+                self.menus[self.profile as usize % 6] = p[4];
+                if !self.pending.0.is_empty() {
+                    self.slots.insert((self.profile, p[4]), self.pending.0.clone());
+                }
+                if self.effect == effect::CUSTOM {
+                    self.per_key.insert(self.profile, self.pending.1.clone());
+                    self.led_effects.insert(self.profile, self.pending.2.clone());
+                }
+            }
             (0x17, src, len, seq) => {
                 let e = self.launch.entry((self.profile, src)).or_default();
                 if seq <= 1 {

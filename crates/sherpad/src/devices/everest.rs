@@ -39,7 +39,39 @@ impl EverestDev {
     }
 
     pub fn switch_profile(&self, slot: u8, menu: MenuIndex) -> Result<()> {
-        self.cmd(&ev::switch_profile(slot, menu.value())).map(|_| ())
+        self.switch_profile_raw(slot, menu.value())
+    }
+
+    /// Switch with a raw menu slot (a menu slot may hold another effect than its usual one).
+    pub fn switch_profile_raw(&self, slot: u8, menu: u8) -> Result<()> {
+        self.cmd(&ev::switch_profile(slot, menu)).map(|_| ())
+    }
+
+    /// Effect menu table: effects per menu slot and current menu per profile.
+    pub fn menu_table(&self) -> Result<ev::MenuTable> {
+        let (p, form) = ev::effect_menu_table_request();
+        let data = self.link.multipart(&p, form, timeout::DEFAULT)?;
+        ev::MenuTable::parse(&data).ok_or_else(|| Error::Invalid("short effect menu table".into()))
+    }
+
+    /// Stored effect data of one menu slot (§5.1 layout, from b2).
+    pub fn slot_effect(&self, profile: u8, menu: u8) -> Result<Vec<u8>> {
+        Ok(self.cmd(&ev::effect_data_request(profile, menu))?[6..].to_vec())
+    }
+
+    /// Stored per-key colours and per-LED effect table of a profile.
+    pub fn custom_tables(&self, profile: u8) -> Result<(Vec<u8>, Vec<u8>)> {
+        let n = self.variant.led_count();
+        let (p, form) = ev::per_key_colors_request(profile);
+        let mut colors = self.link.multipart(&p, form, timeout::DEFAULT)?;
+        let (p, form) = ev::effect_table_request(profile);
+        let mut table = self.link.multipart(&p, form, timeout::DEFAULT)?;
+        if colors.len() < 3 * n || table.len() < n {
+            return Err(Error::Invalid("short per-key tables".into()));
+        }
+        colors.truncate(3 * n);
+        table.truncate(n);
+        Ok((colors, table))
     }
 
     /// Apply a lighting entry and save it under its menu index (F-LGT-3, §5.5 order).

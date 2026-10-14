@@ -527,6 +527,50 @@ fn no_writes_while_the_keyboard_sits_on_a_disabled_profile() {
     assert!(rig.d.store().device(DEV).unwrap().profile(2).unwrap().dirty);
 }
 
+#[test]
+fn lighting_is_imported_on_attach_and_switches_keep_the_device_menus() {
+    use sherpa_core::everest as ev;
+    let (hid, sim) = fake::everest(Variant::EverestMax);
+    {
+        let mut s = sim.lock().unwrap();
+        // Profile 1: Breathing in menu 3, active; per-key colours saved.
+        let mut l = sherpa_core::model::Lighting::new(MenuIndex::Breathing);
+        l.color1 = Rgb(0, 255, 0);
+        l.speed = 50;
+        l.brightness = 60;
+        s.slots.insert((1, 3), ev::lighting_packet(&l).unwrap()[2..60].to_vec());
+        s.per_key.insert(1, vec![0x10; 378]);
+        // Profile 2 is on menu 2, which holds Custom instead of Tornado.
+        s.slots.insert((2, 2), ev::custom_mode(70)[2..60].to_vec());
+        s.menus = [0, 3, 2, 0, 0, 0];
+    }
+    let rig = rig_with(vec![fake::found(DeviceKind::EverestMax, "t", hid.clone(), None)], timing());
+    {
+        let st = rig.d.store();
+        let cfg = st.device(DEV).unwrap();
+        let p1 = cfg.profile(1).unwrap();
+        assert_eq!(p1.active_menu(), MenuIndex::Breathing);
+        let b = p1.lighting.iter().find(|x| x.menu_index == MenuIndex::Breathing).unwrap();
+        assert_eq!((b.color1, b.speed, b.brightness), (Rgb(0, 255, 0), 50, 60));
+        assert_eq!(p1.custom.leds[0], Rgb(0x10, 0x10, 0x10));
+        let p2 = cfg.profile(2).unwrap();
+        assert_eq!(p2.active_menu(), MenuIndex::Custom, "the effect the current slot holds");
+        let t = p2.lighting.iter().find(|x| x.menu_index == MenuIndex::Tornado).unwrap();
+        assert_eq!(t, &sherpa_core::model::Lighting::new(MenuIndex::Tornado), "slot with another effect is not imported");
+    }
+
+    // Editing another profile switches with the raw menus the keyboard is on, and back.
+    hid.clear_log();
+    rig.d.set_binding(DEV, 2, binding(114, BindingType::Media, "Mute")).unwrap();
+    let w = hid.writes();
+    let to = w.iter().position(|p| starts(p, &[0x14, 0x00, 0x00, 0x00, 0x02, 0x02])).expect("switch to profile 2 menu 2");
+    let back = w.iter().position(|p| starts(p, &[0x14, 0x00, 0x00, 0x00, 0x01, 0x03])).expect("back to profile 1 menu 3");
+    assert!(to < back);
+    hid.clear_log();
+    rig.d.select_profile(DEV, 2).unwrap();
+    assert!(hid.writes().iter().any(|p| starts(p, &[0x14, 0x00, 0x00, 0x00, 0x02, 0x02])));
+}
+
 // ---------------------------------------------------------------------------------------
 // Other devices
 

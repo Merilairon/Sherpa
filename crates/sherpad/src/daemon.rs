@@ -199,6 +199,18 @@ pub fn now_clock() -> ClockTime {
 }
 
 /// Key table of a device kind, for binding resolution.
+/// Retry a first command while the device is starting up: the Everest Max needs a few
+/// seconds after plug-in before it answers (hardware, fw 0x57).
+fn when_ready<T>(mut f: impl FnMut() -> Result<T>) -> Result<T> {
+    for _ in 0..8 {
+        match f() {
+            Err(Error::Timeout(_)) => thread::sleep(Duration::from_millis(750)),
+            r => return r,
+        }
+    }
+    f()
+}
+
 fn key_table(kind: DeviceKind) -> &'static [tables::KeyRow] {
     tables::keys_for(kind)
 }
@@ -389,7 +401,7 @@ impl Daemon {
     fn initial_sync(&self, a: &Arc<Attached>) -> Result<()> {
         let device_slot = match &a.driver {
             Driver::Everest(d) | Driver::DisplayPad(DisplayPadDev { cmd: d, .. }) => {
-                let fw = d.fw_info()?;
+                let fw = when_ready(|| d.fw_info())?;
                 let layout = d.layout().unwrap_or(0);
                 let mut l = a.live();
                 l.fw = fw.fw_string.clone();
@@ -437,6 +449,15 @@ impl Daemon {
             let dirty: Vec<u8> = cfg.profiles.iter().filter(|p| p.dirty).map(|p| p.slot).collect();
             (dirty, st.data.settings.sync_on_attach, cfg.selected_slot())
         };
+        if !sync_all {
+            if let Driver::Everest(d) = &a.driver {
+                if a.kind == DeviceKind::EverestMax {
+                    if let Err(e) = self.import_lighting(a, d) {
+                        log::warn!("{}: importing the lighting failed: {e}", a.key);
+                    }
+                }
+            }
+        }
         let mut slots = dirty;
         if sync_all && !slots.contains(&selected) {
             slots.push(selected);
@@ -467,6 +488,56 @@ impl Daemon {
         Ok(())
     }
 
+    /// Import each profile's lighting from the keyboard, as the device wins for the profile
+    /// (D-3): the menu slots that hold their usual effect, the active entry (the effect the
+    /// current menu slot holds) and Custom's per-key tables. Profiles with pending edits
+    /// keep the store's version (D-1).
+    fn import_lighting(&self, a: &Attached, d: &EverestDev) -> Result<()> {
+        let table = d.menu_table()?;
+        let slots: Vec<u8> = self.store().device(&a.key)?.profiles.iter().filter(|p| !p.dirty).map(|p| p.slot).collect();
+        let mut read = Vec::new();
+        for slot in slots {
+            let mut entries = Vec::new();
+            for m in MenuIndex::ALL {
+                if table.effect(slot, m.value()) != Some(m.effect_index()) {
+                    continue;
+                }
+                match d.slot_effect(slot, m.value()) {
+                    Ok(data) => entries.extend(ev::lighting_from_slot(m, &data)),
+                    Err(e) => log::warn!("{}: reading profile {slot} menu {}: {e}", a.key, m.value()),
+                }
+            }
+            let active = table.current_menu(slot).and_then(|m| table.effect(slot, m));
+            read.push((slot, entries, active, d.custom_tables(slot).ok()));
+        }
+        let mut st = self.store();
+        let cfg = st.device_mut(&a.key)?;
+        for (slot, entries, active, custom) in read {
+            let p = cfg.profile_mut(slot)?;
+            for mut l in entries {
+                if let Some(old) = p.lighting.iter_mut().find(|x| x.menu_index == l.menu_index) {
+                    l.active = old.active;
+                    *old = l;
+                } else {
+                    p.lighting.push(l);
+                }
+            }
+            if let Some(m) = active.and_then(|e| MenuIndex::ALL.into_iter().find(|m| m.effect_index() == e)) {
+                for x in &mut p.lighting {
+                    x.active = x.menu_index == m;
+                }
+            }
+            if let Some((colors, effects)) = custom {
+                p.custom.leds = colors.chunks(3).map(|c| sherpa_core::types::Rgb(c[0], c[1], c[2])).collect();
+                p.custom.per_led_effect = effects;
+            }
+        }
+        st.save()?;
+        drop(st);
+        self.bus.emit("StoreChanged", json!({"id": a.key}));
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------------------
     // Low-level device operations
 
@@ -485,18 +556,30 @@ impl Daemon {
         if current == slot || matches!(a.driver, Driver::Makalu(_)) {
             return f();
         }
-        self.switch_device_profile(a, slot, menu)?;
+        // Switch with the menus the keyboard is on, so the lighting does not change.
+        let table = self.menu_table(a);
+        let menu_of = |s: u8, store: MenuIndex| table.as_ref().and_then(|t| t.current_menu(s)).unwrap_or(store.value());
+        self.switch_device_profile(a, slot, menu_of(slot, menu))?;
         let r = f();
-        let back = self.switch_device_profile(a, current, cur_menu);
+        let back = self.switch_device_profile(a, current, menu_of(current, cur_menu));
         let v = r?;
         back?;
         Ok(v)
     }
 
-    fn switch_device_profile(&self, a: &Attached, slot: u8, menu: MenuIndex) -> Result<()> {
+    /// The Everest Max's effect menu table, when it can be read.
+    fn menu_table(&self, a: &Attached) -> Option<ev::MenuTable> {
         match &a.driver {
-            Driver::Everest(d) | Driver::DisplayPad(DisplayPadDev { cmd: d, .. }) => d.switch_profile(slot, menu)?,
-            Driver::Everest60(d) => d.switch_profile(slot, menu.value())?,
+            Driver::Everest(d) if a.kind == DeviceKind::EverestMax => d.menu_table().ok(),
+            _ => None,
+        }
+    }
+
+    /// `menu` is a raw menu slot: on the Everest Max a slot may hold another effect.
+    fn switch_device_profile(&self, a: &Attached, slot: u8, menu: u8) -> Result<()> {
+        match &a.driver {
+            Driver::Everest(d) | Driver::DisplayPad(DisplayPadDev { cmd: d, .. }) => d.switch_profile_raw(slot, menu)?,
+            Driver::Everest60(d) => d.switch_profile(slot, menu)?,
             Driver::Makalu(d) => {
                 d.exec(&mk::set_current_profile(slot))?;
             }
@@ -722,6 +805,7 @@ impl Daemon {
             if a.live().disabled_profiles.contains(&slot) {
                 return Err(Error::ProfileDisabled(slot));
             }
+            let menu = self.menu_table(&a).and_then(|t| t.current_menu(slot)).unwrap_or(menu.value());
             self.switch_device_profile(&a, slot, menu)?;
             if dirty && self.full_apply(&a, slot).is_ok() {
                 self.store().device_mut(dev)?.profile_mut(slot)?.dirty = false;
