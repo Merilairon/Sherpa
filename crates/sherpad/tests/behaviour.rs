@@ -448,6 +448,17 @@ fn lighting_apply_sends_then_saves() {
     assert_eq!(rig.d.store().device(DEV).unwrap().profile(1).unwrap().active_menu(), sherpa_core::types::MenuIndex::Breathing);
 }
 
+#[test]
+fn static_lighting_and_reset_are_accepted() {
+    let (rig, hid, _) = max_rig(timing());
+    hid.clear_log();
+    let mut l = sherpa_core::model::Lighting::new(sherpa_core::types::MenuIndex::Static);
+    l.color1 = Rgb(255, 0, 0);
+    rig.d.set_lighting(DEV, 1, l, true).unwrap();
+    assert!(starts(&hid.writes()[0], &sherpa_core::unhex("14 2c 00 00 ff 64 00 ff ff ff 00 00")));
+    rig.d.reset_profile(DEV, 1).unwrap();
+}
+
 // ---------------------------------------------------------------------------------------
 // Other devices
 

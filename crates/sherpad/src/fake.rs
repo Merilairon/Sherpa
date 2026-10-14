@@ -203,6 +203,11 @@ impl EverestSim {
         if self.nak_if.as_ref().is_some_and(|f| f(p)) {
             return vec![packet(&[0xFF, 0xAA, p[0], p[1]]).to_vec()];
         }
+        // Like the firmware (fw 0x57): `14 2C 00 01 <chunk>` is a per-key colour chunk and
+        // an out-of-range chunk number is rejected.
+        if p[..4] == [0x14, 0x2C, 0x00, 0x01] && p[4] as usize >= (self.variant.led_count() * 3).div_ceil(57) {
+            return vec![packet(&[0xFF, 0xAA, 0x00, 0x00]).to_vec()];
+        }
         let mut r = *p;
         match (p[0], p[1], p[2], p[3]) {
             (0x11, 0x00, _, _) => {

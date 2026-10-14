@@ -24,9 +24,10 @@ Base Camp's binaries or decompiled code to build a compatible replacement.
 | **[P]** | Proven: read directly from Base Camp's shipped code or data. |
 | **[I]** | Inferred: consistent with the code, but not observed on a device. |
 | **[U]** | Unknown: not recoverable from the application. Needs a device or a USB capture. |
+| **[H]** | Hardware: observed on a real device (Everest Max, firmware `0x57`). Wins over [P]/[I] where they disagree. |
 
-None of this has been observed on the wire yet. "Proven" means proven *about what Base Camp
-sends and expects*, not that the device behaves as described.
+Except where tagged [H], none of this has been observed on the wire yet. "Proven" means proven
+*about what Base Camp sends and expects*, not that the device behaves as described.
 
 ## Document map
 
