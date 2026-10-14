@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build release binaries and desktop packages.
 #
-#   scripts/build.sh linux     # basecampd + AppImage/deb/tar.gz
-#   scripts/build.sh win       # basecampd.exe (cross, x86_64-pc-windows-gnu) + NSIS installer/zip
+#   scripts/build.sh linux     # sherpad + AppImage/deb/tar.gz
+#   scripts/build.sh win       # sherpad.exe (cross, x86_64-pc-windows-gnu) + NSIS installer/zip
 #   scripts/build.sh all
 #   scripts/build.sh bin       # daemon binaries only
 #
@@ -14,14 +14,14 @@ TARGET="${1:-all}"
 cd "$ROOT"
 
 build_linux_bin() {
-  cargo build --release -p basecampd
-  install -Dm755 target/release/basecampd dist/bin/linux/basecampd
+  cargo build --release -p sherpad
+  install -Dm755 target/release/sherpad dist/bin/linux/sherpad
 }
 
 build_win_bin() {
   rustup target add x86_64-pc-windows-gnu >/dev/null 2>&1 || true
-  cargo build --release -p basecampd --target x86_64-pc-windows-gnu
-  install -Dm755 target/x86_64-pc-windows-gnu/release/basecampd.exe dist/bin/win/basecampd.exe
+  cargo build --release -p sherpad --target x86_64-pc-windows-gnu
+  install -Dm755 target/x86_64-pc-windows-gnu/release/sherpad.exe dist/bin/win/sherpad.exe
 }
 
 app_deps() {

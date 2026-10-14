@@ -1,5 +1,5 @@
 'use strict';
-// JSON-lines client for basecampd (Unix socket on Linux, named pipe on Windows).
+// JSON-lines client for sherpad (Unix socket on Linux, named pipe on Windows).
 
 const net = require('net');
 const { EventEmitter } = require('events');
@@ -70,7 +70,7 @@ class DaemonClient extends EventEmitter {
   }
 
   call(method, params = {}, timeoutMs = 30000) {
-    if (!this.connected) return Promise.reject(new Error('not connected to basecampd'));
+    if (!this.connected) return Promise.reject(new Error('not connected to sherpad'));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

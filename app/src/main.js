@@ -1,5 +1,5 @@
 'use strict';
-// Electron main process: window, tray, autostart, and the bridge to basecampd.
+// Electron main process: window, tray, autostart, and the bridge to sherpad.
 
 const { app, BrowserWindow, Tray, Menu, ipcMain, dialog, nativeImage, shell } = require('electron');
 const path = require('path');
@@ -11,7 +11,7 @@ const { DaemonClient } = require('./daemon-client');
 const isWin = process.platform === 'win32';
 const FAKE = process.argv.includes('--fake');
 const HIDDEN = process.argv.includes('--hidden');
-const EXE = isWin ? 'basecampd.exe' : 'basecampd';
+const EXE = isWin ? 'sherpad.exe' : 'sherpad';
 
 let win = null;
 let tray = null;
@@ -40,7 +40,7 @@ if (!app.requestSingleInstanceLock()) {
 
 function daemonBinary() {
   const candidates = [];
-  if (process.env.BASECAMPD_PATH) candidates.push(process.env.BASECAMPD_PATH);
+  if (process.env.SHERPAD_PATH) candidates.push(process.env.SHERPAD_PATH);
   if (app.isPackaged) candidates.push(path.join(process.resourcesPath, 'bin', EXE));
   const root = path.join(__dirname, '..', '..');
   candidates.push(path.join(root, 'target', 'release', EXE));
@@ -55,9 +55,9 @@ function defaultEndpoint(bin) {
       return execFileSync(bin, ['--print-socket'], { encoding: 'utf8', timeout: 5000, windowsHide: true }).trim();
     } catch { /* fall through */ }
   }
-  if (isWin) return `\\\\.\\pipe\\basecampd-${(process.env.USERNAME || 'user').replace(/[^\w-]/g, '')}`;
+  if (isWin) return `\\\\.\\pipe\\sherpad-${(process.env.USERNAME || 'user').replace(/[^\w-]/g, '')}`;
   const dir = process.env.XDG_RUNTIME_DIR;
-  return dir ? path.join(dir, 'basecampd.sock') : `/tmp/basecampd-${process.getuid()}.sock`;
+  return dir ? path.join(dir, 'sherpad.sock') : `/tmp/sherpad-${process.getuid()}.sock`;
 }
 
 function simEndpoint(ep) {
@@ -65,7 +65,7 @@ function simEndpoint(ep) {
 }
 
 function spawnDaemon(bin, endpoint) {
-  const logFile = path.join(app.getPath('userData'), FAKE ? 'basecampd-sim.log' : 'basecampd.log');
+  const logFile = path.join(app.getPath('userData'), FAKE ? 'sherpad-sim.log' : 'sherpad.log');
   fs.mkdirSync(path.dirname(logFile), { recursive: true });
   const out = fs.openSync(logFile, 'a');
   const args = ['--socket', endpoint];
@@ -104,7 +104,7 @@ async function reconnect(first = false) {
     } catch (err) {
       if (attempt === 0 && (first || !daemonInfo.spawned)) {
         if (daemonInfo.binary) spawnDaemon(daemonInfo.binary, daemonInfo.endpoint);
-        else daemonInfo.error = 'basecampd binary not found';
+        else daemonInfo.error = 'sherpad binary not found';
       }
       daemonInfo.error = daemonInfo.error || err.message;
       await sleep(250);
@@ -124,7 +124,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     show: false,
-    title: FAKE ? 'Base Camp Linux (simulated devices)' : 'Base Camp Linux',
+    title: FAKE ? 'Sherpa (simulated devices)' : 'Sherpa',
     icon: iconPath(),
     backgroundColor: '#14161a',
     autoHideMenuBar: true,
@@ -166,9 +166,9 @@ function createTray() {
     tray = null;
     return;
   }
-  tray.setToolTip('Base Camp Linux');
+  tray.setToolTip('Sherpa');
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open Base Camp', click: showWindow },
+    { label: 'Open Sherpa', click: showWindow },
     { type: 'separator' },
     { label: 'Quit (keep device service running)', click: () => { quitting = true; app.quit(); } },
     {
@@ -187,7 +187,7 @@ function createTray() {
 
 function linuxAutostartFile() {
   const base = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-  return path.join(base, 'autostart', 'basecamp-linux.desktop');
+  return path.join(base, 'autostart', 'sherpa.desktop');
 }
 
 function applyStartOnBoot(enabled) {
@@ -200,7 +200,7 @@ function applyStartOnBoot(enabled) {
       fs.writeFileSync(file, [
         '[Desktop Entry]',
         'Type=Application',
-        'Name=Base Camp Linux',
+        'Name=Sherpa',
         `Exec="${exec}"${extra} --hidden`,
         'X-GNOME-Autostart-enabled=true',
         'Terminal=false',
@@ -217,7 +217,7 @@ function applyStartOnBoot(enabled) {
 // --- IPC from the renderer -------------------------------------------------------------
 
 ipcMain.handle('bc:call', async (_e, method, params) => {
-  if (!client || !client.connected) throw new Error('Not connected to the Base Camp device service (basecampd).');
+  if (!client || !client.connected) throw new Error('Not connected to the Sherpa device service (sherpad).');
   return client.call(method, params);
 });
 

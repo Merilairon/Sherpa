@@ -1,5 +1,5 @@
 'use strict';
-/* Base Camp Linux — renderer. Plain DOM, no framework. All device state lives in basecampd. */
+/* Sherpa — renderer. Plain DOM, no framework. All device state lives in sherpad. */
 
 // `bc` is the API exposed by preload.js through contextBridge.
 
@@ -309,7 +309,7 @@ function renderSidebar() {
   const sb = document.getElementById('sidebar');
   sb.innerHTML = '';
   sb.append(
-    h('div', { class: 'brand' }, h('div', { class: 'logo' }, '▲'), 'Base Camp'),
+    h('div', { class: 'brand' }, h('div', { class: 'logo' }, '▲'), 'Sherpa'),
     S.info.fake ? h('div', { class: 'side-section' }, h('span', { class: 'badge sim' }, 'Simulated devices')) : null,
     h('div', { class: 'side-title' }, 'Devices'),
     h('div', { class: 'side-section' },
@@ -325,18 +325,18 @@ function renderSidebar() {
       h('div', { class: `side-item ${S.view === 'settings' ? 'active' : ''}`, onclick: () => { S.view = 'settings'; render(); } }, h('span', {}, '⚙'), 'Settings')),
     h('div', { class: 'side-footer' },
       h('div', { class: 'row', style: { gap: '6px' } }, h('span', { class: `dot ${S.info.connected ? 'on' : 'off'}` }), S.info.connected ? 'Device service running' : 'Device service offline'),
-      S.status ? h('div', {}, `basecampd ${S.status.version} · ${S.status.platform}`) : null));
+      S.status ? h('div', {}, `sherpad ${S.status.version} · ${S.status.platform}`) : null));
 }
 
 function renderDisconnected() {
   const linux = S.info.platform === 'linux';
   return h('div', { class: 'status-panel card' },
     h('h1', {}, 'Connecting to the device service…'),
-    h('p', { class: 'hint' }, 'Base Camp talks to your devices through a small background service, basecampd.'),
+    h('p', { class: 'hint' }, 'Sherpa talks to your devices through a small background service, sherpad.'),
     S.info.error ? h('p', { class: 'warn' }, S.info.error) : null,
     h('p', {}, 'Endpoint: ', h('code', {}, S.info.endpoint || '?')),
     h('p', {}, 'Service binary: ', h('code', {}, S.info.binary || 'not found')),
-    linux ? h('p', { class: 'hint' }, 'If devices are not detected, install the udev rule shipped in the package (70-basecamp.rules) and re-plug the device.') : null,
+    linux ? h('p', { class: 'hint' }, 'If devices are not detected, install the udev rule shipped in the package (70-sherpa.rules) and re-plug the device.') : null,
     h('button', { class: 'primary', onclick: async () => { S.info = await bc.info(); if (S.info.connected) boot(); else render(); } }, 'Retry'));
 }
 
@@ -873,7 +873,7 @@ function renderBindingEditor() {
     field('Action', select(types, B.type, (v) => { B.type = v; B.value = ''; B.value2 = null; B.subType = null; render(); })),
     bindingFields(B, rerender),
     k === 'displaypad' ? renderDisplayImages(B, rerender) : null,
-    field('Label', h('input', { value: B.alternateName || '', placeholder: 'optional name shown in Base Camp', oninput: (e) => { B.alternateName = e.target.value || null; } })),
+    field('Label', h('input', { value: B.alternateName || '', placeholder: 'optional name shown in Sherpa', oninput: (e) => { B.alternateName = e.target.value || null; } })),
     k !== 'displaypad' ? check('Apply to every profile', B.syncAcrossProfiles, (v) => { B.syncAcrossProfiles = v; }) : null,
     h('div', { class: 'row' },
       h('button', { class: 'primary', onclick: save }, 'Save'),
@@ -966,7 +966,7 @@ function renderProfileTab() {
       h('div', { class: 'row' },
         h('button', { onclick: async () => {
           const data = await call('ExportProfile', { dev: S.devId, slot: p.slot });
-          if (await bc.saveJson(`${p.name}.basecamp-profile.json`, data)) toast('Profile exported', 'ok');
+          if (await bc.saveJson(`${p.name}.sherpa-profile.json`, data)) toast('Profile exported', 'ok');
         } }, 'Export…'),
         h('button', { onclick: async () => {
           const data = await bc.loadJson();
@@ -1188,7 +1188,7 @@ function renderMacros() {
         h('div', { class: 'row' },
           h('button', { class: 'primary', onclick: () => { S.macroSel = null; S.macroDraft = { ...newMacro(), _old: null }; render(); } }, '+ New'),
           h('button', { onclick: async () => { const data = await bc.loadJson(); if (data) { const n = await call('ImportMacros', { data }).catch(() => 0); if (n) toast(`Imported ${n} macro(s)`, 'ok'); } } }, 'Import…'),
-          h('button', { onclick: async () => { const data = await call('ExportMacros'); if (await bc.saveJson('macros.basecamp.json', data)) toast('Macros exported', 'ok'); } }, 'Export…'))),
+          h('button', { onclick: async () => { const data = await call('ExportMacros'); if (await bc.saveJson('macros.sherpa.json', data)) toast('Macros exported', 'ok'); } }, 'Export…'))),
       S.macroDraft ? renderMacroEditor(S.macroDraft) : h('div', { class: 'card hint' }, 'Create a macro to get started.')));
 }
 
@@ -1343,7 +1343,7 @@ function renderSettings() {
     h('div', { class: 'row', style: { marginTop: '14px' } }, h('button', { class: 'primary', onclick: save }, 'Save settings')),
     h('div', { class: 'card col', style: { marginTop: '14px' } },
       h('h2', {}, 'About'),
-      h('div', { class: 'hint' }, `Base Camp Linux ${S.info.version || ''} · basecampd ${S.status ? S.status.version : '?'} · ${S.info.platform}`),
+      h('div', { class: 'hint' }, `Sherpa ${S.info.version || ''} · sherpad ${S.status ? S.status.version : '?'} · ${S.info.platform}`),
       h('div', { class: 'hint' }, 'Configuration: ', h('code', {}, (S.status && S.status.configDir) || '?')),
       h('div', { class: 'hint' }, 'Service endpoint: ', h('code', {}, S.info.endpoint || '?'))));
 }

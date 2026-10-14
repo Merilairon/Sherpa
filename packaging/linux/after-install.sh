@@ -1,15 +1,15 @@
 #!/bin/sh
 # Debian package post-install: daemon on PATH, udev rules, systemd user unit.
 set -e
-APP="/opt/Base Camp Linux"
+APP="/opt/Sherpa"
 RES="$APP/resources"
-ln -sf "$RES/bin/basecampd" /usr/bin/basecampd
-if [ -f "$APP/basecamp-linux" ]; then
-  ln -sf "$APP/basecamp-linux" /usr/bin/basecamp-linux
+ln -sf "$RES/bin/sherpad" /usr/bin/sherpad
+if [ -f "$APP/sherpa" ]; then
+  ln -sf "$APP/sherpa" /usr/bin/sherpa
 fi
-install -Dm644 "$RES/linux/70-basecamp.rules" /usr/lib/udev/rules.d/70-basecamp.rules
-install -Dm644 "$RES/linux/71-basecamp-uinput.rules" /usr/lib/udev/rules.d/71-basecamp-uinput.rules
-install -Dm644 "$RES/linux/basecampd.service" /usr/lib/systemd/user/basecampd.service
+install -Dm644 "$RES/linux/70-sherpa.rules" /usr/lib/udev/rules.d/70-sherpa.rules
+install -Dm644 "$RES/linux/71-sherpa-uinput.rules" /usr/lib/udev/rules.d/71-sherpa-uinput.rules
+install -Dm644 "$RES/linux/sherpad.service" /usr/lib/systemd/user/sherpad.service
 if command -v udevadm >/dev/null 2>&1; then
   udevadm control --reload-rules || true
   udevadm trigger --subsystem-match=hidraw --action=change || true

@@ -1,0 +1,47 @@
+[package]
+name = "sherpad"
+description = "Sherpa: Base Camp compatible user daemon for Mountain peripherals"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "sherpad"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sherpad"
+path = "src/main.rs"
+
+[dependencies]
+sherpa-core = { path = "../sherpa-core" }
+sherpa-hid = { path = "../sherpa-hid" }
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync", "macros", "time", "signal"] }
+sysinfo = { version = "0.32", default-features = false, features = ["system", "disk", "network"] }
+tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
+sha2 = "0.10"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Threading",
+  "Win32_System_Pipes",
+  "Win32_System_Com",
+  "Win32_System_Shutdown",
+  "Win32_System_LibraryLoader",
+  "Win32_Media_Audio",
+  "Win32_Media_Audio_Endpoints",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Shell",
+] }

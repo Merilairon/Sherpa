@@ -1,5 +1,5 @@
 'use strict';
-// KeyboardEvent.code → canonical key names used by the daemon (see basecamp-core keys.rs).
+// KeyboardEvent.code → canonical key names used by the daemon (see sherpa-core keys.rs).
 window.KEYCODES = (() => {
   const m = {
     Escape: 'Esc', Backquote: '`', Minus: '-', Equal: '=', Backspace: 'Backspace', Tab: 'Tab',

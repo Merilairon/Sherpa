@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/basecamp-core", "crates/basecamp-hid", "crates/basecampd"]
+members = ["crates/sherpa-core", "crates/sherpa-hid", "crates/sherpad"]
 
 [workspace.package]
 version = "0.1.0"

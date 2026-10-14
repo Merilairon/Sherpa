@@ -1,3 +1,0 @@
-# Base Camp Linux: let the logged-in user open Mountain peripherals (USB vendor 3282)
-# through hidraw. No root daemon is needed.
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", TAG+="uaccess"

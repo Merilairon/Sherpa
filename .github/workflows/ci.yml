@@ -34,16 +34,16 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux
-            exe: basecampd
+            exe: sherpad
           - os: windows-latest
             platform: win
-            exe: basecampd.exe
+            exe: sherpad.exe
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Build basecampd
-        run: cargo build --release -p basecampd
+      - name: Build sherpad
+        run: cargo build --release -p sherpad
       - name: Stage daemon
         shell: bash
         run: |

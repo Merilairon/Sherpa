@@ -10,7 +10,7 @@ The implementation follows the recommended architecture of
 
 ```
 ┌───────────────────────┐  JSON lines over a Unix socket (Linux)  ┌──────────────────────────┐
-│ Electron app (app/)   │ ───── or a named pipe (Windows) ──────▶ │ basecampd (user process) │
+│ Electron app (app/)   │ ───── or a named pipe (Windows) ──────▶ │ sherpad (user process) │
 │  main: tray, autostart│ ◀──────────── signals ───────────────── │  device manager          │
 │  renderer: plain DOM  │                                          │  config store (JSON)     │
 └───────────────────────┘                                          │  host actions            │
@@ -21,7 +21,7 @@ The implementation follows the recommended architecture of
 
 | Spec requirement | Where |
 |---|---|
-| Vendor collection `FF00:01`, report-ID rule | `basecamp-hid` (descriptor parser), `devices/mod.rs::pick` |
+| Vendor collection `FF00:01`, report-ID rule | `sherpa-hid` (descriptor parser), `devices/mod.rs::pick` |
 | One command in flight, chunks atomic, ack per packet (C-1, C-2) | `link.rs` (`Session` holds the per-device lock) |
 | Timer pushes skipped when busy (C-3) | `Link::try_session`, `EverestDev::push` |
 | Host actions off the device thread (C-4) | `host.rs::spawn_action` |
@@ -43,7 +43,7 @@ Windows HID needs no driver for vendor collections.
 
 Request `{"id": n, "method": "...", "params": {...}}`, response `{"id": n, "result": ...}`
 or `{"id": n, "error": {"message": "..."}}`, and signals `{"signal": "...", "data": {...}}`.
-`basecampd --call <Method> '<json>'` is a minimal client.
+`sherpad --call <Method> '<json>'` is a minimal client.
 
 | Area | Methods |
 |---|---|
@@ -71,9 +71,9 @@ Signals: `DeviceAttached`, `DeviceDetached`, `DeviceChanged`, `ProfileChanged`,
 
 | Spec | Tests |
 |---|---|
-| 07 §1 golden packets G1–G22 | `basecamp-core/src/everest.rs` (`golden_*`) |
+| 07 §1 golden packets G1–G22 | `sherpa-core/src/everest.rs` (`golden_*`) |
 | 07 §2 reply parsing R1–R11 | `everest.rs`, `multipart.rs`, `bitmap.rs`, `launch.rs`, `actions/mod.rs`, `tests/behaviour.rs` (`r3_*`, `r4_*`, `r9_*`–`r11_*`) |
-| 07 §3 behavioural B1–B11 | `basecampd/tests/behaviour.rs` (`b1_*`…`b11_*`), against simulated devices (`fake.rs`); B6 starts a real process, B11 impersonates another UID when run as root |
+| 07 §3 behavioural B1–B11 | `sherpad/tests/behaviour.rs` (`b1_*`…`b11_*`), against simulated devices (`fake.rs`); B6 starts a real process, B11 impersonates another UID when run as root |
 | 08 §5 MacroPad MP1–MP4 | `everest.rs::macropad_vectors`, `behaviour.rs::macropad_vectors_through_daemon` |
 | 09 §7 DisplayPad DP1–DP4 | `displaypad.rs`, `behaviour.rs::displaypad_init_layers_and_actions` |
 | 10 §7 Everest 60 E1–E5 | `everest60.rs`, `behaviour.rs::everest60_profile_poll_and_keys` |
@@ -104,12 +104,12 @@ or the least invasive choice, is implemented.
 | Makalu 67 keyboard modifier byte, macro mouse classes `10`/`11` | HID modifier bitmap; `10` buttons (mask), `11` wheel. |
 | Makalu 67 event bytes b4/b5 order | Passed through unchanged to the bulk read; the program check accepts any program button of the device. |
 | Makalu 67 OS-command macros | Not offered (event lists unknown). |
-| DisplayPad stored icons, animations, panel save (09 §4) | Icons are uploaded live by the host (layers need that anyway); stored/animated uploads are implemented in `basecamp-core` but not used; panel save is not implemented. |
+| DisplayPad stored icons, animations, panel save (09 §4) | Icons are uploaded live by the host (layers need that anyway); stored/animated uploads are implemented in `sherpa-core` but not used; panel save is not implemented. |
 | DisplayPad live tiles (clock, PC info, viewers) and session-lock blanking | Not implemented. |
 | Host playback of hold/repeat macros (DisplayPad, multi-actions) | Played once. |
 | OBS "Set Current Source" | Toggles the source's visibility in the current program scene. |
 | Twitch, YouTube, Spotify (F-INT-1/2) | Need their own OAuth apps; the bindings can be stored but report "not configured". |
 | Adobe / DaVinci / Zoom presets | No preset data in the spec; use a keyboard shortcut binding. |
-| Profile export/import, macro export/import format | Own JSON formats (`basecamp-linux-profile`, `basecamp-linux-macros`); macro import also accepts Windows VK `rawcode`s. |
+| Profile export/import, macro export/import format | Own JSON formats (`sherpa-profile`, `sherpa-macros`); macro import also accepts Windows VK `rawcode`s. |
 | Second press of a running multi-action | Ignored (as recommended). |
 | Makalu (`3282:0002`) | Not implemented (spec is a survey only). |

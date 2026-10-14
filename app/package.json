@@ -1,6 +1,6 @@
 {
-  "name": "basecamp-linux",
-  "productName": "Base Camp Linux",
+  "name": "sherpa",
+  "productName": "Sherpa",
   "version": "0.1.0",
   "description": "Configuration software for Mountain keyboards, keypads and mice (Linux and Windows)",
   "main": "src/main.js",
@@ -19,9 +19,9 @@
     "electron-builder": "25.1.8"
   },
   "build": {
-    "appId": "org.basecamplinux.app",
-    "productName": "Base Camp Linux",
-    "executableName": "basecamp-linux",
+    "appId": "org.sherpa.app",
+    "productName": "Sherpa",
+    "executableName": "sherpa",
     "directories": {
       "output": "../dist/app",
       "buildResources": "build"
