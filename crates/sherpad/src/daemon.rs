@@ -477,12 +477,13 @@ impl Daemon {
             let cfg = st.device(&a.key)?;
             (cfg.selected_slot(), cfg.selected().active_menu(), cfg.profile(slot)?.active_menu())
         };
-        if current == slot || matches!(a.driver, Driver::Makalu(_)) {
-            return f();
-        }
-        // The keyboard ACKs writes to a disabled profile but drops them.
+        // The keyboard ACKs writes to a disabled profile, but drops them or stores them
+        // over another profile's key data. Also when it is already on that profile.
         if a.live().disabled_profiles.contains(&slot) {
             return Err(Error::ProfileDisabled(slot));
+        }
+        if current == slot || matches!(a.driver, Driver::Makalu(_)) {
+            return f();
         }
         self.switch_device_profile(a, slot, menu)?;
         let r = f();
@@ -879,6 +880,10 @@ impl Daemon {
     /// Live preview: send without saving.
     pub fn preview_lighting(&self, dev: &str, l: &Lighting) -> Result<()> {
         let a = self.require(dev)?;
+        let current = a.live().current_profile;
+        if a.live().disabled_profiles.contains(&current) {
+            return Err(Error::ProfileDisabled(current));
+        }
         match &a.driver {
             Driver::Everest(d) => {
                 let custom = self.store().device(dev)?.selected().custom.clone();
