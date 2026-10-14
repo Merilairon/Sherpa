@@ -180,7 +180,8 @@ pub struct EverestSim {
     pub ext: ExtendInfo,
     pub clock_digital: bool,
     pub clock_12h: bool,
-    pub toggles: HashMap<u8, u8>,
+    /// Toggles by `toggle_key`.
+    pub toggles: HashMap<u16, u8>,
     /// Launch content per (profile, fwKey).
     pub launch: HashMap<(u8, u8), Vec<u8>>,
     /// Saved effect data per (profile, menu slot), §5.1 layout from b2 (58 bytes).
@@ -220,6 +221,15 @@ impl EverestSim {
             pending: (Vec::new(), vec![0xFF; 3 * variant.led_count()], vec![0; variant.led_count()]),
             nak_if: None,
             ignore_if: None,
+        }
+    }
+
+    /// Key of a toggle in `toggles`: game mode per profile (high byte), others device-wide.
+    fn toggle_key(&self, code: u8) -> u16 {
+        if code == 0x06 {
+            (self.profile as u16) << 8 | code as u16
+        } else {
+            code as u16
         }
     }
 
@@ -305,9 +315,10 @@ impl EverestSim {
                 r[11] = self.clock_digital as u8;
                 r[12] = self.clock_12h as u8;
             }
-            (0x12, code, 0x00, 0x00) if code >= 0x06 => r[4] = *self.toggles.get(&code).unwrap_or(&0),
+            // Game mode (06) is kept per profile, the other toggles device-wide (fw 0x57).
+            (0x12, code, 0x00, 0x00) if code >= 0x06 => r[4] = *self.toggles.get(&self.toggle_key(code)).unwrap_or(&0),
             (0x12, code, 0x00, 0x01) if code >= 0x06 => {
-                self.toggles.insert(code, p[4]);
+                self.toggles.insert(self.toggle_key(code), p[4]);
             }
             (0x14, 0x00, _, _) => {
                 self.profile = p[4];

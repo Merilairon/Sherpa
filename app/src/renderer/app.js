@@ -1001,7 +1001,7 @@ function renderProfileTab() {
 // Device tab
 
 const MODES = {
-  'everest-max': [['lighting', 'Key lighting'], ['indicator', 'Indicator LEDs'], ['gameMode', 'Game mode'], ['yeti', 'YETI mode'], ['syncProfiles', 'Same key bindings in all profiles'], ['keyFunctions', 'Fn key functions']],
+  'everest-max': [['lighting', 'Key lighting'], ['indicator', 'Indicator LEDs'], ['gameMode', 'Game mode (this profile)'], ['yeti', 'YETI mode'], ['syncProfiles', 'Same key bindings in all profiles (also rewrites lighting menus on profile switches)'], ['keyFunctions', 'Fn key functions']],
   'macropad': [['lighting', 'Key lighting'], ['syncProfiles', 'Same key bindings in all profiles'], ['keyFunctions', 'Fn key functions']],
   'everest-60': [['lighting', 'Key lighting'], ['indicator', 'Indicator LEDs'], ['gameMode', 'Game mode'], ['yeti', 'YETI mode'], ['syncProfiles', 'Same key bindings in all profiles'], ['keyFunctions', 'Fn key functions']],
   'displaypad': [['logo', 'Show the Mountain logo']],
