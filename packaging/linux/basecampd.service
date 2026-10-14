@@ -1,0 +1,13 @@
+[Unit]
+Description=Base Camp device service for Mountain peripherals
+Documentation=https://github.com/Merilairon/base-camp-linux
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/basecampd
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

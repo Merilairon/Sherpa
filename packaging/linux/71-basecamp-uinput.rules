@@ -1,0 +1,4 @@
+# Base Camp Linux (optional): let the logged-in user create a virtual input device.
+# Needed for host-executed shortcuts, multi-actions and DisplayPad key actions.
+# Note: this lets any program of the logged-in user inject keyboard and mouse input.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

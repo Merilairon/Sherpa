@@ -1,4 +1,9 @@
 __pycache__/
 *.egg-info/
 build/
+!app/build/
 .venv/
+/target/
+/dist/
+node_modules/
+*.log

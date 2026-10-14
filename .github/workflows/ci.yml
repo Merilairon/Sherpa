@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Rust tests
+        run: cargo test --workspace
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Front-end syntax check
+        run: node app/scripts/check.js
+
+  package:
+    name: Package (${{ matrix.os }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            exe: basecampd
+          - os: windows-latest
+            platform: win
+            exe: basecampd.exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build basecampd
+        run: cargo build --release -p basecampd
+      - name: Stage daemon
+        shell: bash
+        run: |
+          mkdir -p dist/bin/${{ matrix.platform }}
+          cp target/release/${{ matrix.exe }} dist/bin/${{ matrix.platform }}/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install front-end dependencies
+        working-directory: app
+        run: npm ci
+      - name: Build desktop packages
+        working-directory: app
+        run: npx electron-builder --${{ matrix.platform }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: base-camp-linux-${{ matrix.platform }}
+          path: |
+            dist/app/*.AppImage
+            dist/app/*.deb
+            dist/app/*.tar.gz
+            dist/app/*.exe
+            dist/app/*.zip
+          if-no-files-found: error

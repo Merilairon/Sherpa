@@ -1,0 +1,78 @@
+{
+  "name": "basecamp-linux",
+  "productName": "Base Camp Linux",
+  "version": "0.1.0",
+  "description": "Configuration software for Mountain keyboards, keypads and mice (Linux and Windows)",
+  "main": "src/main.js",
+  "author": "base-camp-linux contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/Merilairon/base-camp-linux",
+  "scripts": {
+    "start": "electron .",
+    "start:fake": "electron . --fake",
+    "check": "node scripts/check.js",
+    "dist:linux": "electron-builder --linux --publish never",
+    "dist:win": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "org.basecamplinux.app",
+    "productName": "Base Camp Linux",
+    "executableName": "basecamp-linux",
+    "directories": {
+      "output": "../dist/app",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/bin/${os}",
+        "to": "bin"
+      },
+      {
+        "from": "../packaging/linux",
+        "to": "linux",
+        "filter": [
+          "*.rules",
+          "*.service",
+          "*.sh"
+        ]
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ],
+      "category": "Utility",
+      "icon": "assets/icon.png",
+      "synopsis": "Configure Mountain peripherals",
+      "maintainer": "base-camp-linux contributors <noreply@example.invalid>"
+    },
+    "deb": {
+      "afterInstall": "../packaging/linux/after-install.sh",
+      "afterRemove": "../packaging/linux/after-remove.sh"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": null
+  }
+}
