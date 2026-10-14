@@ -145,7 +145,7 @@ column [P].
 | `screenSaverType` | enum | see below; bit position in `screenSetup` [U] |
 | `screenSaverSec` | u16 | `screenSaver` (unit [U], probably seconds) |
 | `turnOffSec` | u16 | `turnOff` |
-| `profilesShown` | u8[5] | `showProfile` |
+| `profilesShown` | u8[5] | `showProfile` (the device's `0x10` "disabled" flags are kept on write [H]) |
 | `dockBrightness[5]`, `numpadBrightness[5]` | u8 | `exBrightness` |
 
 Screen saver types [P]: 0 Image, 1/2 Clock, 3 Stopwatch, 4 Timer, 7 Volume, 8 Brightness,

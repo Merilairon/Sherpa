@@ -598,10 +598,47 @@ impl ExtendInfo {
         b[16] = self.numpad_plug;
         b[17] = self.pixel_shift_time;
         b[18] = self.dock_double_click;
-        for (i, v) in self.brightness.iter().enumerate() {
-            b[19 + i] = 0x80 | quantize_brightness(v & 0x7F);
-        }
+        // Raw: `0x80 | level` sets a level, a byte without `0x80` keeps the current one
+        // (hardware, fw 0x57). `from_dock` adds the flag.
+        b[19..29].copy_from_slice(&self.brightness);
         b
+    }
+
+    /// The value to write back after a read: same settings, with the write rules of §6.4
+    /// (dockPlug 2, menuIndex 0, numpadPlug 2). Brightness bytes read back as 0, i.e.
+    /// without `0x80`, so the device keeps its levels.
+    pub fn rewrite(&self) -> ExtendInfo {
+        ExtendInfo { dock_plug: 2, menu_index: 0, numpad_plug: 2, ..self.clone() }
+    }
+
+    /// Is firmware profile `slot` enabled? A profile missing from `showProfile` counts as
+    /// enabled.
+    pub fn profile_enabled(&self, slot: u8) -> bool {
+        self.show_profile.iter().find(|&&v| v & 0x0F == slot).is_none_or(|v| v & PROFILE_DISABLED == 0)
+    }
+
+    pub fn disabled_profiles(&self) -> Vec<u8> {
+        (1..=5).filter(|&s| !self.profile_enabled(s)).collect()
+    }
+
+    /// Set or clear the disabled flag of profile `slot`. Returns false when the profile is
+    /// not in `showProfile`.
+    pub fn set_profile_enabled(&mut self, slot: u8, enabled: bool) -> bool {
+        match self.show_profile.iter_mut().find(|v| **v & 0x0F == slot) {
+            Some(v) => {
+                *v = if enabled { *v & !PROFILE_DISABLED } else { *v | PROFILE_DISABLED };
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Copy the disabled flags of `device` onto this value's `showProfile` entries.
+    pub fn keep_profile_flags(&mut self, device: &ExtendInfo) {
+        for v in &mut self.show_profile {
+            let off = !device.profile_enabled(*v & 0x0F);
+            *v = if off { *v | PROFILE_DISABLED } else { *v & !PROFILE_DISABLED };
+        }
     }
 
     pub fn from_bytes(b: &[u8]) -> ExtendInfo {
@@ -646,6 +683,11 @@ fn side(v: u8) -> &'static str {
         "none"
     }
 }
+
+/// `showProfile` flag: the profile is disabled on the keyboard. Switching to it is ACKed
+/// but nothing is loaded (FW info reports effect and menu `FF`), and writes are dropped
+/// (hardware, fw 0x57).
+pub const PROFILE_DISABLED: u8 = 0x10;
 
 /// Each `showProfile` entry must be non-zero with a distinct low nibble.
 pub fn validate_show_profile(sp: &[u8; 5]) -> ProtoResult<()> {
@@ -916,6 +958,25 @@ mod tests {
         assert!(ext_info_write(Variant::EverestMax, &ExtendInfo::from_dock(&d)).is_err());
         let d = DockSettings { profiles_shown: [1, 2, 3, 4, 0], ..Default::default() };
         assert!(ext_info_write(Variant::EverestMax, &ExtendInfo::from_dock(&d)).is_err());
+    }
+
+    #[test]
+    fn disabled_profiles_and_rewrite() {
+        // As read from a keyboard with only profile 1 enabled (fw 0x57).
+        let read = ExtendInfo::from_bytes(&unhex("01 a9 41 dc 29 bc 70 1e 00 1e 00 01 12 13 14 15 01 00 32 00 00 00 00 00 00 00 00 00 00"));
+        assert_eq!(read.disabled_profiles(), vec![2, 3, 4, 5]);
+        assert!(read.profile_enabled(1));
+        let mut e = read.rewrite();
+        assert!(e.set_profile_enabled(2, true));
+        assert!(!e.set_profile_enabled(6, true));
+        assert_eq!(e.disabled_profiles(), vec![3, 4, 5]);
+        let p = ext_info_write(Variant::EverestMax, &e).unwrap();
+        // Write rules applied, profile 2 enabled, brightness left at 0 (= keep).
+        assert_pkt(&p, "11 14 00 01 02 a9 00 dc 29 bc 70 1e 00 1e 00 01 02 13 14 15 02 00 32 00 00 00 00 00 00 00 00 00 00");
+
+        let mut d = ExtendInfo::from_dock(&DockSettings::default());
+        d.keep_profile_flags(&read);
+        assert_eq!(d.show_profile, [0x01, 0x12, 0x13, 0x14, 0x15]);
     }
 
     #[test]
