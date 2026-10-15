@@ -99,6 +99,7 @@ Configuration lives in `$XDG_CONFIG_HOME/sherpa/store.json` (Linux) or
 
 ## Documentation
 
+- [docs/FEATURES.md](docs/FEATURES.md): overview of implemented and open features.
 - [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md): architecture, IPC API, how the spec maps
   to the code, test coverage, and every place where the spec is silent (`TODO(spec)`).
 - [docs/cleanroom/](docs/cleanroom/README.md): the specification this is built from.
