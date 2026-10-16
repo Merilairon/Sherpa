@@ -27,7 +27,7 @@ only.
 | Host playback of *Hold* and *Repeat* macros (DisplayPad, multi-actions) | 01 §6 | currently played once; needs key-state tracking |
 | GPU load for the dock: NVIDIA (NVML) and Windows (PDH counters) | 01 F-DCK-4 | currently AMD/Intel sysfs only, otherwise 0 |
 | Linux installer polish: Flatpak/Snap, Arch/Fedora packages | README | .deb, AppImage and tar.gz exist |
-| Settings completeness check against 01 §2 (language / locales, default custom delay, saved picker colours, start minimized) | 01 §2 | verify each is exposed in the UI; add UI localisation (Base Camp ships 17 locales) |
+| Settings completeness check against 01 §2 (language / locales, default custom delay, saved picker colours, start minimized) | 01 §2 | verify each is exposed in the UI. UI localisation exists for 5 languages (see FEATURES); add the remaining Base Camp locales, translate the tray menu and daemon option lists |
 | Keyring storage for integration tokens | 01 F-INT-1 | prerequisite for section 3 |
 
 ## 2. Blocked on missing protocol information
@@ -52,6 +52,10 @@ can be built.
 - [ ] **Dock network value unit** (F-DCK-4): currently Mbit/s clamped to 0..100.
 - [ ] **Game mode key set and YETI mode semantics** (01 §8).
 - [ ] **"Sync across devices"** lighting flag behaviour (06).
+- [ ] **Dock/numpad picture upload** (Everest Max): protocol not specified.
+- [ ] **Razer Chroma sync** (Windows-only): mirror Chroma broadcast colours through the
+      device's live "sync effect" mode (01 §2, §8). Needs the streaming protocol and a
+      Chroma SDK/broadcast listener.
 
 ## 3. Integrations (optional, F-INT-2)
 
@@ -70,8 +74,8 @@ Bindings can already be stored but report "not configured".
 
 ## 5. Explicitly out of scope (per spec)
 
-Firmware updates and the bootloader (`060B:7801`), dock/numpad picture upload, raw flash
-access, telemetry, update checks, Razer Chroma sync.
+Firmware updates and the bootloader (`060B:7801`), raw flash access, telemetry, update
+checks.
 
 ## Suggested order
 

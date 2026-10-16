@@ -17,11 +17,12 @@ function h(tag, attrs, ...children) {
     else if (k === 'checked') el.checked = !!v;
     else if (k === 'disabled') el.disabled = !!v;
     else if (k === 'selected') el.selected = !!v;
+    else if ((k === 'placeholder' || k === 'title') && typeof v === 'string') el.setAttribute(k, t(v));
     else el.setAttribute(k, v === true ? '' : v);
   }
   for (const c of children.flat(Infinity)) {
     if (c == null || c === false) continue;
-    el.append(c instanceof Node ? c : String(c));
+    el.append(c instanceof Node ? c : (typeof c === 'string' ? t(c) : String(c)));
   }
   return el;
 }
@@ -216,7 +217,7 @@ async function boot() {
   S.catalog = await call('GetCatalog', {}, { quiet: true }).catch(() => null);
   S.settings = await call('GetSettings', {}, { quiet: true }).catch(() => null);
   S.macros = await call('GetMacros', {}, { quiet: true }).catch(() => []);
-  if (S.settings) bc.applyAppSettings(S.settings);
+  if (S.settings) { I18N.set(S.settings.language); bc.applyAppSettings(S.settings); }
   await loadDevices();
   render();
 }
@@ -265,18 +266,19 @@ bc.onSignal(async (msg) => {
       break;
     case 'SettingsChanged':
       S.settings = await call('GetSettings', {}, { quiet: true }).catch(() => S.settings);
+      if (S.settings && S.settings.language !== I18N.lang) { I18N.set(S.settings.language); render(); }
       break;
     case 'ActionFailed':
-      toast(`Action failed: ${d.message}`, 'error');
+      toast(t('Action failed: {message}', { message: d.message }), 'error');
       break;
     case 'LaunchApprovalRequired': {
       const ok = await confirmBox('Allow this program?',
-        `A key on your device asks to open "${d.path}". It is not bound to that key on this computer (the device may have been set up elsewhere). Allow it from now on?`, 'Allow');
+        t('A key on your device asks to open "{path}". It is not bound to that key on this computer (the device may have been set up elsewhere). Allow it from now on?', { path: d.path }), 'Allow');
       if (ok) await call('ApproveLaunch', { path: d.path }, { okMsg: 'Allowed. Press the key again.' });
       break;
     }
     case 'CalibrationResult':
-      toast(`Calibration result: ${JSON.stringify(d.result)}`, 'ok');
+      toast(t('Calibration result: {result}', { result: JSON.stringify(d.result) }), 'ok');
       break;
     case 'DeviceReset':
       toast('The device was reset to defaults.');
@@ -308,7 +310,7 @@ function render() {
 function renderSidebar() {
   const sb = document.getElementById('sidebar');
   sb.innerHTML = '';
-  sb.append(
+  sb.append(...[
     h('div', { class: 'brand' }, h('div', { class: 'logo' }, '▲'), 'Sherpa'),
     S.info.fake ? h('div', { class: 'side-section' }, h('span', { class: 'badge sim' }, 'Simulated devices')) : null,
     h('div', { class: 'side-title' }, 'Devices'),
@@ -318,14 +320,15 @@ function renderSidebar() {
         class: `side-item ${S.view === 'device' && S.devId === d.id ? 'active' : ''}`,
         onclick: () => openDevice(d.id),
       }, h('span', { class: `dot ${d.connected ? 'on' : 'off'}` }),
-      h('div', {}, h('div', {}, d.name), h('div', { class: 'sub' }, d.connected ? `Profile ${d.selectedSlot}` : 'Disconnected'))))),
+      h('div', {}, h('div', {}, d.name), h('div', { class: 'sub' }, d.connected ? t('Profile {n}', { n: d.selectedSlot }) : 'Disconnected'))))),
     h('div', { class: 'side-title' }, 'Library'),
     h('div', { class: 'side-section' },
       h('div', { class: `side-item ${S.view === 'macros' ? 'active' : ''}`, onclick: () => { S.view = 'macros'; render(); } }, h('span', {}, '⏺'), 'Macros'),
       h('div', { class: `side-item ${S.view === 'settings' ? 'active' : ''}`, onclick: () => { S.view = 'settings'; render(); } }, h('span', {}, '⚙'), 'Settings')),
     h('div', { class: 'side-footer' },
       h('div', { class: 'row', style: { gap: '6px' } }, h('span', { class: `dot ${S.info.connected ? 'on' : 'off'}` }), S.info.connected ? 'Device service running' : 'Device service offline'),
-      S.status ? h('div', {}, `sherpad ${S.status.version} · ${S.status.platform}`) : null));
+      S.status ? h('div', {}, `sherpad ${S.status.version} · ${S.status.platform}`) : null),
+  ].filter(Boolean));
 }
 
 function renderDisconnected() {
@@ -350,12 +353,12 @@ function renderDevice() {
   const c = cfg();
   const live = S.dev.live || {};
   const details = [];
-  if (live.fw) details.push(`Firmware ${live.fw}`);
+  if (live.fw) details.push(t('Firmware {v}', { v: live.fw }));
   if (kind() === 'everest-max') {
-    if (live.dockSide) details.push(`Media dock: ${live.dockSide}`);
-    if (live.numpadSide) details.push(`Numpad: ${live.numpadSide}`);
+    if (live.dockSide) details.push(t('Media dock: {side}', { side: t(live.dockSide) }));
+    if (live.numpadSide) details.push(t('Numpad: {side}', { side: t(live.numpadSide) }));
   }
-  if (kind() === 'everest-60' && live.numpadSide) details.push(`Numpad: ${live.numpadSide}`);
+  if (kind() === 'everest-60' && live.numpadSide) details.push(t('Numpad: {side}', { side: t(live.numpadSide) }));
   const tabs = KIND_TABS[kind()];
   return h('div', {},
     h('div', { class: 'header' },
@@ -374,11 +377,11 @@ function renderProfiles() {
     const off = disabled.includes(p.slot);
     return h('div', {
       class: `profile-chip ${p.selected ? 'sel' : ''} ${off ? 'off' : ''}`,
-      title: off ? 'Disabled on the keyboard' : (p.linkedExe ? `Linked to ${p.linkedExe}` : ''),
+      title: off ? 'Disabled on the keyboard' : (p.linkedExe ? t('Linked to {exe}', { exe: p.linkedExe }) : ''),
       onclick: async () => {
         if (p.selected) return;
         if (off) {
-          if (!await confirmBox('Enable profile', `Profile ${p.slot} is disabled on the keyboard, so it cannot be selected. Enable it?`, 'Enable')) return;
+          if (!await confirmBox('Enable profile', t('Profile {n} is disabled on the keyboard, so it cannot be selected. Enable it?', { n: p.slot }), 'Enable')) return;
           try { await call('SetProfileEnabled', { dev: S.devId, slot: p.slot, enabled: true }); } catch { return; }
         }
         await call('SelectProfile', { dev: S.devId, slot: p.slot }).catch(() => {});
@@ -509,8 +512,8 @@ function renderLightEditor(L) {
     rows.push(h('div', { class: 'row' }, colours));
     if (ANIMATED.has(m)) rows.push(field('Speed', slider(L.speed, (v) => set('speed', v))));
     rows.push(field('Brightness', slider(L.brightness, (v) => set('brightness', v))));
-    if (m === 'colorWave') rows.push(field('Direction', select([[0, 'Direction 0'], [2, 'Direction 2'], [4, 'Direction 4'], [6, 'Direction 6']], L.direction, (v) => set('direction', Number(v)))));
-    if (m === 'tornado') rows.push(field('Direction', select([[9, 'Direction 9'], [10, 'Direction 10']], L.direction === 10 ? 10 : 9, (v) => set('direction', Number(v)))));
+    if (m === 'colorWave') rows.push(field('Direction', select([0, 2, 4, 6].map((n) => [n, t('Direction {n}', { n })]), L.direction, (v) => set('direction', Number(v)))));
+    if (m === 'tornado') rows.push(field('Direction', select([9, 10].map((n) => [n, t('Direction {n}', { n })]), L.direction === 10 ? 10 : 9, (v) => set('direction', Number(v)))));
   } else {
     rows.push(h('p', { class: 'hint' }, 'Turns the key lighting off for this profile.'));
   }
@@ -572,7 +575,7 @@ function renderCustom(L) {
       h('div', { class: 'row' },
         h('button', { onclick: () => { S.selKeys = new Set(allLeds()); render(); } }, 'Select all'),
         h('button', { onclick: () => { S.selKeys.clear(); render(); } }, 'Select none'),
-        h('button', { class: 'primary', disabled: S.selKeys.size === 0, onclick: paint }, `Paint ${S.selKeys.size || ''} key${S.selKeys.size === 1 ? '' : 's'}`)),
+        h('button', { class: 'primary', disabled: S.selKeys.size === 0, onclick: paint }, S.selKeys.size ? t(S.selKeys.size === 1 ? 'Paint {n} key' : 'Paint {n} keys', { n: S.selKeys.size }) : t('Paint keys'))),
       field('Brightness', slider(L.brightness, (v) => { L.brightness = v; })),
       h('div', { class: 'row' },
         h('button', { onclick: () => { S.customDraft = null; render(); } }, 'Discard changes'),
@@ -659,7 +662,7 @@ function renderKeys() {
 function layerName(id) {
   const p = selectedProfile();
   const l = (p.layers || []).find((x) => x.id === id);
-  return l ? l.name : `Folder ${id}`;
+  return l ? l.name : t('Folder {id}', { id });
 }
 
 function renderCrumbs() {
@@ -695,12 +698,12 @@ function valueSelect(list, value, onchange) {
 function bindingFields(B, rerender, { forStep = false } = {}) {
   const cat = S.catalog || {};
   const set = (k) => (v) => { B[k] = v; };
-  const t = B.type;
+  const type = B.type;
   const browse = (key, folder) => h('button', { class: 'small', onclick: async () => {
     const p = folder ? await bc.openFolder() : await bc.openFile();
     if (p) { B[key] = p; rerender(); }
   } }, 'Browse…');
-  switch (t) {
+  switch (type) {
     case 'shortcut':
       return [field('Shortcut', shortcutInput(B.value, set('value')))];
     case 'keyboardFunction':
@@ -734,11 +737,11 @@ function bindingFields(B, rerender, { forStep = false } = {}) {
     case 'twitch':
     case 'youTube':
     case 'spotify': {
-      const list = { twitch: cat.twitch, youTube: cat.youtube, spotify: cat.spotify }[t];
+      const list = { twitch: cat.twitch, youTube: cat.youtube, spotify: cat.spotify }[type];
       return [h('p', { class: 'warn' }, 'This integration needs an account link that is not available in this version yet.'),
         field('Action', valueSelect(list, B.subType, (v) => { B.subType = v; })),
         field('Value', h('input', { value: B.value || '', oninput: (e) => { B.value = e.target.value; } })),
-        t !== 'youTube' ? field('Value 2', h('input', { value: B.value2 || '', oninput: (e) => { B.value2 = e.target.value; } })) : null];
+        type !== 'youTube' ? field('Value 2', h('input', { value: B.value2 || '', oninput: (e) => { B.value2 = e.target.value; } })) : null];
     }
     case 'hotkeySwitch':
       return [field('First press', shortcutInput(B.value, set('value'))), field('Second press', shortcutInput(B.value2, set('value2'))),
@@ -748,7 +751,7 @@ function bindingFields(B, rerender, { forStep = false } = {}) {
     case 'multiAction':
       return [renderSteps(B, rerender)];
     case 'displayFolder':
-      return [h('p', { class: 'hint' }, B.value ? `Opens “${layerName(Number(B.value))}”.` : 'Saving creates a new folder with a Back key.'),
+      return [h('p', { class: 'hint' }, B.value ? t('Opens “{name}”.', { name: layerName(Number(B.value)) }) : 'Saving creates a new folder with a Back key.'),
         B.value ? h('button', { onclick: async () => { S.dpLayer = Number(B.value); S.keySel = null; S.bindDraft = null; if (S.dev.connected) await call('OpenLayer', { dev: S.devId, layer: S.dpLayer }, { quiet: true }).catch(() => {}); render(); } }, 'Open folder') : null];
     case 'displayBack':
       return [h('p', { class: 'hint' }, 'Returns to the parent folder.')];
@@ -866,7 +869,7 @@ function renderBindingEditor() {
         b.value = String(id);
       }
       if (b.type === 'obs' && !b.subType) b.subType = (S.catalog.obs || [])[0];
-      await call('SetBinding', { dev: S.devId, slot: slot(), binding: b }, { okMsg: `${key.label}: ${typeLabel(b.type)}` });
+      await call('SetBinding', { dev: S.devId, slot: slot(), binding: b }, { okMsg: `${key.label}: ${t(typeLabel(b.type))}` });
       await loadDevice();
       const nb = bindingFor(key);
       S.bindDraft = nb ? clone(nb) : B;
@@ -874,13 +877,13 @@ function renderBindingEditor() {
     } catch { /* toast */ }
   };
   const reset = async () => {
-    await call('ClearBinding', { dev: S.devId, slot: slot(), led: key.led, layer: currentLayer(), layerId: k === 'displaypad' ? S.dpLayer : 0 }, { okMsg: `${key.label} restored` }).catch(() => {});
+    await call('ClearBinding', { dev: S.devId, slot: slot(), led: key.led, layer: currentLayer(), layerId: k === 'displaypad' ? S.dpLayer : 0 }, { okMsg: t('{label} restored', { label: key.label }) }).catch(() => {});
     await loadDevice();
     S.bindDraft = { type: 'default', value: '', led: key.led, fwKey: key.fwKey, layer: currentLayer(), layerId: k === 'displaypad' ? S.dpLayer : 0, isFirstImageSelected: true };
     render();
   };
   return h('div', { class: 'card col' },
-    h('h2', {}, key.label, h('span', { class: 'hint' }, `  LED ${key.led} · key ${key.fwKey}`)),
+    h('h2', {}, key.label, h('span', { class: 'hint' }, `  ${t('LED {led} · key {key}', { led: key.led, key: key.fwKey })}`)),
     field('Action', select(types, B.type, (v) => { B.type = v; B.value = ''; B.value2 = null; B.subType = null; render(); })),
     bindingFields(B, rerender),
     k === 'displaypad' ? renderDisplayImages(B, rerender) : null,
@@ -924,8 +927,8 @@ function renderDock() {
     h('div', { class: 'card col' },
       h('h2', {}, 'Profiles and brightness'),
       h('div', { class: 'grid5' }, [0, 1, 2, 3, 4].map((i) => h('div', { class: 'col', style: { gap: '6px' } },
-        h('strong', {}, `Profile ${i + 1}`),
-        field('Shown as', select([1, 2, 3, 4, 5].map((n) => [n, `Profile ${n}`]), D.profilesShown[i], (v) => { D.profilesShown[i] = Number(v); })),
+        h('strong', {}, t('Profile {n}', { n: i + 1 })),
+        field('Shown as', select([1, 2, 3, 4, 5].map((n) => [n, t('Profile {n}', { n })]), D.profilesShown[i], (v) => { D.profilesShown[i] = Number(v); })),
         field('Dock', select(brightness, D.dockBrightness[i] ?? '', (v) => { D.dockBrightness[i] = v === '' ? null : Number(v); })),
         field('Numpad', select(brightness, D.numpadBrightness[i] ?? '', (v) => { D.numpadBrightness[i] = v === '' ? null : Number(v); }))))),
       h('p', { class: 'hint' }, '"Default" leaves the level unset. On firmware 0x57, setting a level was stored but made no visible difference in testing.')),
@@ -938,7 +941,7 @@ function renderDock() {
       } }, 'Save to device'),
       h('button', { disabled: !S.dev.connected, onclick: () => call('SyncClock', { dev: S.devId }, { okMsg: 'Clock synchronised' }) }, 'Sync clock now'),
       h('button', { disabled: !S.dev.connected, onclick: async () => { S.dockState = await call('GetDockState', { dev: S.devId }).catch(() => null); render(); } }, 'Read dock state'),
-      S.dockState ? h('span', { class: 'hint' }, `Dock ${S.dockState.dockSide}, numpad ${S.dockState.numpadSide}, page ${S.dockState.menuIndex}`) : null));
+      S.dockState ? h('span', { class: 'hint' }, t('Dock {dock}, numpad {numpad}, page {page}', { dock: t(S.dockState.dockSide), numpad: t(S.dockState.numpadSide), page: S.dockState.menuIndex })) : null));
 }
 
 // ---------------------------------------------------------------------------------------
@@ -950,7 +953,7 @@ function renderProfileTab() {
   let copyTo = cfg().profiles.find((x) => x.slot !== p.slot).slot;
   return h('div', { class: 'col', style: { maxWidth: '720px' } },
     h('div', { class: 'card col' },
-      h('h2', {}, `Profile ${p.slot}`),
+      h('h2', {}, t('Profile {n}', { n: p.slot })),
       field('Name', h('input', { value: d.name, oninput: (e) => { d.name = e.target.value; } })),
       field('Switch to this profile when this program starts',
         h('div', { class: 'row', style: { flexWrap: 'nowrap' } },
@@ -969,7 +972,7 @@ function renderProfileTab() {
         'Copy this profile to',
         select(cfg().profiles.filter((x) => x.slot !== p.slot).map((x) => [x.slot, `${x.slot} · ${x.name}`]), copyTo, (v) => { copyTo = Number(v); }),
         h('button', { onclick: async () => {
-          if (await confirmBox('Copy profile', `Replace the lighting and keys of profile ${copyTo} with this profile?`, 'Copy')) {
+          if (await confirmBox('Copy profile', t('Replace the lighting and keys of profile {n} with this profile?', { n: copyTo }), 'Copy')) {
             await call('CopyProfile', { dev: S.devId, from: p.slot, to: copyTo }, { okMsg: 'Profile copied' }).catch(() => {});
             await loadDevice();
             render();
@@ -1108,7 +1111,7 @@ function renderSensor() {
         h('button', { disabled: !S.dev.connected, onclick: async () => {
           const r = await call('Calibrate', { dev: S.devId, step: 'result' }).catch(() => null);
           if (!r) return;
-          if (await confirmBox('Calibration result', `Result ${r.result}, surface ${r.surface}. Save it?`, 'Save')) {
+          if (await confirmBox('Calibration result', t('Result {result}, surface {surface}. Save it?', { result: r.result, surface: r.surface }), 'Save')) {
             await call('Calibrate', { dev: S.devId, step: 'save', surface: r.surface }, { okMsg: 'Surface saved' }).catch(() => {});
           }
         } }, 'Read & save'),
@@ -1167,7 +1170,7 @@ function renderMouseButtons() {
       select((S.catalog && S.catalog.mouseButtonTypes) || [], B.type, (v) => { B.type = v; B.value = (MOUSE_VALUES[v] || [''])[0]; holder.innerHTML = ''; holder.append(valueInput()); }),
       holder,
       h('button', { class: 'primary', onclick: async () => {
-        await call('SetMouseButton', { dev: S.devId, slot: slot(), button: B }, { okMsg: `${lb.label} saved` }).catch(() => {});
+        await call('SetMouseButton', { dev: S.devId, slot: slot(), button: B }, { okMsg: t('{label} saved', { label: lb.label }) }).catch(() => {});
         await loadDevice();
         render();
       } }, 'Save'));
@@ -1199,7 +1202,7 @@ function renderMacros() {
           list.map((m) => h('div', { class: `menu-item ${S.macroSel === m.name ? 'sel' : ''}`, onclick: () => { S.macroSel = m.name; S.macroDraft = null; render(); } }, m.name, h('span', { class: 'hint' }, `${m.events.length}`)))),
         h('div', { class: 'row' },
           h('button', { class: 'primary', onclick: () => { S.macroSel = null; S.macroDraft = { ...newMacro(), _old: null }; render(); } }, '+ New'),
-          h('button', { onclick: async () => { const data = await bc.loadJson(); if (data) { const n = await call('ImportMacros', { data }).catch(() => 0); if (n) toast(`Imported ${n} macro(s)`, 'ok'); } } }, 'Import…'),
+          h('button', { onclick: async () => { const data = await bc.loadJson(); if (data) { const n = await call('ImportMacros', { data }).catch(() => 0); if (n) toast(t('Imported {n} macro(s)', { n }), 'ok'); } } }, 'Import…'),
           h('button', { onclick: async () => { const data = await call('ExportMacros'); if (await bc.saveJson('macros.sherpa.json', data)) toast('Macros exported', 'ok'); } }, 'Export…'))),
       S.macroDraft ? renderMacroEditor(S.macroDraft) : h('div', { class: 'card hint' }, 'Create a macro to get started.')));
 }
@@ -1207,7 +1210,7 @@ function renderMacros() {
 function eventLabel(e) {
   if (e.type === 'keydown' || e.type === 'keyup') return e.key || (e.rawcode != null ? `VK ${e.rawcode}` : '?');
   if (e.type === 'wheel') return e.rotation >= 0 ? 'Wheel up' : 'Wheel down';
-  return ['', 'Left', 'Right', 'Middle'][e.button || 1] + ' button';
+  return t(['', 'Left button', 'Right button', 'Middle button'][e.button || 1]);
 }
 
 function renderMacroEditor(M) {
@@ -1235,7 +1238,7 @@ function renderMacroEditor(M) {
     const old = m._old;
     delete m._old;
     try {
-      await call('PutMacro', { macro: m, oldName: old }, { okMsg: `Macro “${m.name}” saved` });
+      await call('PutMacro', { macro: m, oldName: old }, { okMsg: t('Macro “{name}” saved', { name: m.name }) });
       S.macros = await call('GetMacros');
       S.macroSel = m.name.trim();
       S.macroDraft = null;
@@ -1285,11 +1288,11 @@ function renderMacroEditor(M) {
       select([['keytap', 'Key press + release'], ['keydown', 'Key press'], ['keyup', 'Key release'], ['click', 'Left click'], ['wheelUp', 'Wheel up'], ['wheelDown', 'Wheel down']], addType, (v) => { addType = v; }),
       select(keys, addKey, (v) => { addKey = v; }),
       h('button', { onclick: add }, '+ Add event'),
-      h('span', { class: 'hint' }, `${M.events.length} / 999 events. The last delay is always 0.`)),
+      h('span', { class: 'hint' }, t('{n} / 999 events. The last delay is always 0.', { n: M.events.length }))),
     h('div', { class: 'row' },
       h('button', { class: 'primary', onclick: save }, 'Save macro'),
       M._old ? h('button', { class: 'danger', onclick: async () => {
-        if (await confirmBox('Delete macro', `Delete “${M._old}”? Keys that run it go back to their default.`, 'Delete', 'danger')) {
+        if (await confirmBox('Delete macro', t('Delete “{name}”? Keys that run it go back to their default.', { name: M._old }), 'Delete', 'danger')) {
           await call('DeleteMacro', { name: M._old }, { okMsg: 'Macro deleted' }).catch(() => {});
           S.macros = await call('GetMacros');
           S.macroSel = null;
@@ -1319,6 +1322,7 @@ function renderSettings() {
     try {
       await call('SetSettings', { settings: s }, { okMsg: 'Settings saved' });
       S.settings = s;
+      I18N.set(s.language);
       await bc.applyAppSettings(s);
       await loadDevices();
       render();
@@ -1334,6 +1338,7 @@ function renderSettings() {
       check('Keep running in the tray when the window is closed', s.minimizeToTray, (v) => { s.minimizeToTray = v; }),
       check('Show only connected devices', s.displayOnlyConnectedDevices, (v) => { s.displayOnlyConnectedDevices = v; }),
       field('Default custom macro delay (ms)', h('input', { type: 'number', min: 0, value: s.defaultCustomDelayMs, oninput: (e) => { s.defaultCustomDelayMs = Number(e.target.value); } })),
+      field('Language', select(I18N.languages(), s.language || 'en', (v) => { s.language = v; })),
       check('Re-apply the selected profile whenever a device is connected', s.syncOnAttach, (v) => { s.syncOnAttach = v; }),
       h('span', { class: 'hint' }, 'Off by default: rewriting the device on every connect wears its flash memory.')),
     h('div', { class: 'card col' },
@@ -1345,7 +1350,7 @@ function renderSettings() {
         h('button', { onclick: async () => {
           await call('SetSettings', { settings: s }, { quiet: true }).catch(() => {});
           const scenes = await call('ObsQuery', { query: 'Get Scenes' }).catch(() => null);
-          if (scenes) toast(`Connected to OBS. Scenes: ${scenes.join(', ') || 'none'}`, 'ok');
+          if (scenes) toast(t('Connected to OBS. Scenes: {scenes}', { scenes: scenes.join(', ') || t('none') }), 'ok');
         } }, 'Test connection'),
         h('span', { class: 'hint' }, 'Enable the WebSocket server in OBS (Tools → WebSocket Server Settings).'))),
     h('div', { class: 'card col' },

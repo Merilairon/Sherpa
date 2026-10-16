@@ -15,3 +15,18 @@ const files = [];
 })(root);
 for (const f of files) execFileSync(process.execPath, ['--check', f], { stdio: 'inherit' });
 console.log(`ok: ${files.length} files`);
+
+// Locale packs: every translation must keep the same {placeholders} as its English key.
+const vm = require('vm');
+const localeDir = path.join(root, 'renderer', 'locales');
+let problems = 0;
+for (const f of fs.readdirSync(localeDir).filter((n) => n.endsWith('.js'))) {
+  let pack = null;
+  vm.runInNewContext(fs.readFileSync(path.join(localeDir, f), 'utf8'), { I18N: { register: (code, name, dict) => { pack = { code, name, dict }; } } });
+  const ph = (s) => (s.match(/\{\w+\}/g) || []).sort().join();
+  for (const [k, v] of Object.entries(pack.dict)) {
+    if (ph(k) !== ph(v)) { console.error(`${f}: placeholder mismatch in "${k}"`); problems++; }
+  }
+  console.log(`locale ${pack.code}: ${Object.keys(pack.dict).length} strings`);
+}
+if (problems) process.exit(1);

@@ -23,8 +23,8 @@ Legend: ✅ implemented · ⚠️ implemented with a guess or limitation · ❌ 
 | Tray, autostart, daemon respawn | ✅ | |
 | Simulated devices (`--fake`) and dry-run mode | ✅ | |
 | Packages: .deb, AppImage, tar.gz, NSIS installer, zip | ✅ | Flatpak/Snap, Arch/Fedora packages ❌ |
-| UI localisation (Base Camp ships 17 locales) | ❌ | |
-| Settings audit against spec 01 §2 | ❌ | default custom delay, saved colours, start minimised, language |
+| UI localisation (Base Camp ships 17 locales) | ⚠️ | English, Nederlands, Deutsch, Français, Español; language picker in Settings. Translations are unreviewed by native speakers; tray menu and daemon-supplied option names (media, OS, OBS, Twitch/Spotify actions, key names) stay English; 12 locales missing. Add a language: `app/src/renderer/locales/` |
+| Settings audit against spec 01 §2 | ❌ | default custom delay, saved colours, start minimised |
 
 ## 2. Devices
 
@@ -48,6 +48,7 @@ Legend: ✅ implemented · ⚠️ implemented with a guess or limitation · ❌ 
 | OBS (obs-websocket) | ⚠️ | "Set Current Source" toggles visibility in the program scene |
 | OS command Sleep vs Hibernate | ⚠️ | one firmware target for both |
 | Spotify, Twitch, YouTube | ❌ | bindings can be stored, report "not configured"; need OAuth apps and keyring storage |
+| Razer Chroma sync | ❌ | wanted; Windows-only, mirrors Chroma broadcast colours via the device's "sync effect" streaming mode (spec 01 §2, §8); protocol not specified |
 | Adobe / DaVinci Resolve / Zoom presets | ❌ | no preset data in the spec; use keyboard-shortcut bindings |
 | Profile export/import | ✅ | `sherpa-profile` format |
 
@@ -59,12 +60,11 @@ Legend: ✅ implemented · ⚠️ implemented with a guess or limitation · ❌ 
 | PC info feed: CPU, RAM, volume, APM | ✅ | |
 | GPU load | ⚠️ | AMD/Intel via sysfs only; NVIDIA (NVML) and Windows (PDH) report 0 |
 | Network value unit | ⚠️ | Mbit/s clamped to 0..100 |
-| Picture upload | ❌ | out of scope per spec |
+| Dock/numpad picture upload | ❌ | wanted; protocol not specified, needs a capture pass |
 
-## 5. Out of scope (per spec)
+## 5. Out of scope
 
-Firmware updates and bootloader, dock/numpad picture upload, raw flash access, telemetry,
-update checks, Razer Chroma sync.
+Firmware updates and bootloader, raw flash access, telemetry, update checks.
 
 ## 6. Next steps (summary)
 

@@ -27,8 +27,8 @@ hidraw/uinput, Win32 HID/SendInput, obs-websocket).
 | Makalu 67 | `3282:0003`, `0004` | Profiles, DPI levels, polling rate, response time, angle snapping, lift-off, surface calibration, lighting (with live preview), all six buttons, run program/URL buttons |
 | Makalu (original) | `3282:0002` | Not yet: only surveyed by the specification |
 
-Out of scope (as in the spec): firmware updates, dock/numpad picture upload, raw flash
-access, telemetry, Razer Chroma sync, update checks.
+Not yet (spec incomplete): dock/numpad picture upload, Razer Chroma sync.
+Out of scope: firmware updates, raw flash access, telemetry, update checks.
 
 ## Install
 
